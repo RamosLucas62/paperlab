@@ -7,7 +7,7 @@ from paperlab.config import Settings
 def test_terminal_defaults_to_monad_testnet():
     settings = Settings(_env_file=None)
     assert settings.monad_chain_id == 10143
-    assert settings.monad_rpc_url == "https://rpc.testnet.monad.xyz"
+    assert settings.monad_rpc_url == "https://testnet-rpc.monad.xyz"
     assert settings.kuru_ws_url == "wss://ws.testnet.kuru.io"
 
 

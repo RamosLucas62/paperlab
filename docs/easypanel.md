@@ -61,7 +61,7 @@ Para a VPS PaperLab já configurada no EasyPanel, mantenha o serviço Compose at
 
 ### Observação de mercado atual
 
-A configuração padrão continua na Monad Testnet. Na verificação pública desta sessão, `ws.testnet.kuru.io` não resolveu via DNS, enquanto o feed de mainnet aceitou a assinatura do mercado MON/USDC e retornou bid/ask. Para exibir esse mercado sem enviar transações, use explicitamente estas variáveis no Environment do Compose:
+A configuração padrão continua na Monad Testnet. A checagem read-only desta sessão confirmou chain ID `10143` em `https://testnet-rpc.monad.xyz`; o antigo host `rpc.testnet.monad.xyz` não resolveu via DNS. Ainda não há mercado Kuru de Testnet validado: `ws.testnet.kuru.io` não resolveu e o endereço de exemplo do SDK legado não tem bytecode após o reset da Testnet. O serviço permanece sem feed até receber um endereço e endpoint funcionais. Para observar o mercado público MON/USDC da mainnet sem enviar transações, use explicitamente estas variáveis no Environment do Compose:
 
 ```env
 MONAD_CHAIN_ID=143

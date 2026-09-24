@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 MONAD_NETWORKS = {
     10143: {
         "name": "Monad Testnet",
-        "rpc_url": "https://rpc.testnet.monad.xyz",
+        "rpc_url": "https://testnet-rpc.monad.xyz",
         "kuru_ws_url": "wss://ws.testnet.kuru.io",
     },
     143: {
