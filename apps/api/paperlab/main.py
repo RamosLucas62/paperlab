@@ -25,9 +25,9 @@ from paperlab.database import Base, SessionLocal, engine, get_db
 from paperlab.demo import create_demo_experiment, ensure_default_experiment, run_demo_cycle, set_demo_status
 from paperlab.domain import ZERO
 from paperlab.market_feed import market_address_is_valid
-from paperlab.models import AdminUser, Bar, Decision, Experiment, Fill, IntegrationEvent, ModelCall, NewsVersion, OrderIntent, PortfolioSnapshot, Snapshot, TerminalControl, MarketSample
+from paperlab.models import AdminUser, Bar, Decision, Experiment, Fill, IntegrationEvent, ModelCall, NewsVersion, OrderIntent, PortfolioSnapshot, Snapshot, TerminalControl, MarketSample, TerminalSimulationAccount
 from paperlab.openrouter import ModelIntegrationError, OpenRouterClient
-from paperlab.simulation import cancel_open_orders, ensure_simulation_account, simulation_payload
+from paperlab.simulation import cancel_open_orders, ensure_simulation_account, pilot_end, simulation_payload
 from paperlab.terminal_state import ensure_terminal_control, load_terminal_history
 
 
@@ -61,7 +61,7 @@ class ExperimentBody(BaseModel):
 
 
 class TerminalControlBody(BaseModel):
-    action: Literal["start_monitor", "stop_monitor", "enable_jev", "disable_jev", "enable_simulation", "disable_simulation"]
+    action: Literal["start_pilot", "pause_pilot", "start_monitor", "stop_monitor", "enable_jev", "disable_jev", "enable_simulation", "disable_simulation"]
 
 
 def require_user(request: Request):
@@ -258,17 +258,29 @@ def market_terminal_control(body: TerminalControlBody, request: Request,
                             _user: str = Depends(require_user)):
     require_csrf(request, x_csrf_token)
     control = _terminal_control(db)
-    if body.action == "start_monitor":
+    if body.action in {"start_monitor", "start_pilot"}:
         if not market_address_is_valid(settings.kuru_market_address):
             raise HTTPException(status_code=409, detail="Configure KURU_MARKET_ADDRESS com o endereço MON/USDC da Kuru no EasyPanel antes de iniciar.")
         if not settings.monad_rpc_url.startswith("https://"):
             raise HTTPException(status_code=409, detail="Configure um endpoint HTTPS da Monad em MONAD_RPC_URL.")
         if not settings.kuru_ws_url.startswith("wss://"):
             raise HTTPException(status_code=409, detail="A Kuru não documenta um feed WSS ativo para Monad Testnet. Mantenha o monitor parado até haver um endpoint e mercado válidos nessa rede.")
+        if body.action == "start_pilot":
+            if not settings.openrouter_api_key or not settings.jev_model or "latest" in settings.jev_model.lower():
+                raise HTTPException(status_code=409, detail="Configure OPENROUTER_API_KEY e um JEV_MODEL de versão fixa antes de iniciar o piloto.")
+            account = db.scalar(select(TerminalSimulationAccount).where(
+                TerminalSimulationAccount.chain_id == settings.monad_chain_id,
+                TerminalSimulationAccount.symbol == settings.kuru_symbol,
+            ))
+            if account is not None and account.finished_at is not None:
+                raise HTTPException(status_code=409, detail="Este piloto de cinco dias terminou. O resultado foi preservado; não é possível reiniciar o mesmo livro virtual.")
         control.monitor_enabled = True
+        if body.action == "start_pilot":
+            control.jev_enabled = account is None or datetime.now(timezone.utc) < pilot_end(account)
+            control.simulation_enabled = True
         control.status = "starting"
         control.last_error = None
-    elif body.action == "stop_monitor":
+    elif body.action in {"stop_monitor", "pause_pilot"}:
         control.monitor_enabled = False
         control.jev_enabled = False
         control.simulation_enabled = False

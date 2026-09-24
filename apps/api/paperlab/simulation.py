@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from paperlab.models import (
@@ -25,6 +25,9 @@ from paperlab.models import (
 
 STARTING_CASH_USDC = Decimal("1000.00")
 ORDER_NOTIONAL_USDC = Decimal("10.00")
+PILOT_DAYS = 5
+GOAL_DAYS = 90
+GOAL_EQUITY_USDC = Decimal("10000.00")
 MIN_CLASSIFICATION_CONFIDENCE = Decimal("0.80")
 ORDER_TTL_SECONDS = 120
 MAX_SIGNAL_AGE_SECONDS = 120
@@ -76,6 +79,31 @@ def ensure_simulation_account(db: Session, chain_id: int, symbol: str) -> Termin
     return account
 
 
+def pilot_end(account: TerminalSimulationAccount) -> datetime:
+    return _aware(account.created_at) + timedelta(days=PILOT_DAYS)
+
+
+def close_pilot_if_due(db: Session, control: TerminalControl, sample: MarketSample, *, now: datetime | None = None) -> bool:
+    """Freeze the virtual result on the first valid quote at or after day five."""
+    now = _aware(now or _now())
+    account = db.scalar(select(TerminalSimulationAccount).where(
+        TerminalSimulationAccount.chain_id == sample.chain_id,
+        TerminalSimulationAccount.symbol == sample.symbol,
+    ))
+    if account is None or account.finished_at is not None or now < pilot_end(account):
+        return False
+    account.final_equity_usdc = (account.cash_usdc + account.position_qty * sample.mid_price).quantize(MONEY_QUANTUM)
+    account.finished_at = now
+    account.updated_at = now
+    cancel_open_orders(db, sample.chain_id, now=now)
+    control.simulation_enabled = False
+    control.jev_enabled = False
+    control.monitor_enabled = False
+    control.status = "stopped"
+    db.flush()
+    return True
+
+
 def _new_decision(db: Session, observation: JevObservation, chain_id: int, symbol: str,
                   stance: str, confidence: Decimal | None, status: str, reason: str) -> TerminalSimulationDecision:
     decision = TerminalSimulationDecision(
@@ -114,6 +142,8 @@ def record_simulated_decision(
         return existing
 
     account = ensure_simulation_account(db, control.network_chain_id, quote.symbol if quote else "MON/USDC")
+    if account.finished_at is not None or now >= pilot_end(account):
+        return None
     symbol = quote.symbol if quote else account.symbol
     chain_id = control.network_chain_id
     result = observation.result_json if observation.status == "ready" and isinstance(observation.result_json, dict) else {}
@@ -259,6 +289,8 @@ def advance_simulation_with_sample(
     ))
     if account is None:
         return False
+    if account.finished_at is not None or now >= pilot_end(account):
+        return False
     order = _active_order(db, sample.chain_id, sample.symbol)
     if order is None or sample.id == order.created_sample_id:
         return False
@@ -319,6 +351,7 @@ def simulation_payload(db: Session, control: TerminalControl, sample: MarketSamp
     ))
     if account is None:
         account_data = None
+        pilot_data = None
     else:
         mark_is_current = sample is not None and sample.chain_id == chain_id and sample.symbol == symbol
         if mark_is_current:
@@ -330,6 +363,9 @@ def simulation_payload(db: Session, control: TerminalControl, sample: MarketSamp
             unrealized = ((mark - account.average_entry_price) * account.position_qty).quantize(MONEY_QUANTUM)
         total_pnl = None if unrealized is None else (account.realized_pnl_usdc + unrealized).quantize(MONEY_QUANTUM)
         equity = None if mark is None and account.position_qty > 0 else account.cash_usdc + account.position_qty * (mark or Decimal("0"))
+        if account.finished_at is not None:
+            equity = account.final_equity_usdc
+            total_pnl = None if equity is None else equity - account.starting_cash_usdc
         account_data = {
             "starting_cash_usdc": str(account.starting_cash_usdc),
             "cash_usdc": str(account.cash_usdc),
@@ -343,6 +379,51 @@ def simulation_payload(db: Session, control: TerminalControl, sample: MarketSamp
             "realized_pnl_usdc": str(account.realized_pnl_usdc),
             "unrealized_pnl_usdc": None if unrealized is None else str(unrealized),
             "total_pnl_usdc": None if total_pnl is None else str(total_pnl),
+        }
+        cutoff = account.finished_at or pilot_end(account)
+        decision_count = db.scalar(select(func.count(TerminalSimulationDecision.id)).where(
+            TerminalSimulationDecision.chain_id == chain_id,
+            TerminalSimulationDecision.symbol == symbol,
+            TerminalSimulationDecision.created_at >= account.created_at,
+            TerminalSimulationDecision.created_at <= cutoff,
+        )) or 0
+        filled_count = db.scalar(select(func.count(TerminalSimulationOrder.id)).where(
+            TerminalSimulationOrder.chain_id == chain_id,
+            TerminalSimulationOrder.symbol == symbol,
+            TerminalSimulationOrder.status == "filled",
+            TerminalSimulationOrder.created_at >= account.created_at,
+            TerminalSimulationOrder.created_at <= cutoff,
+        )) or 0
+        ai_cost = db.scalar(select(func.sum(JevObservation.cost_usd)).join(
+            MarketSample, JevObservation.sample_id == MarketSample.id,
+        ).where(
+            MarketSample.chain_id == chain_id,
+            MarketSample.symbol == symbol,
+            JevObservation.observed_at >= account.created_at,
+            JevObservation.observed_at <= cutoff,
+        ))
+        unknown_cost_count = db.scalar(select(func.count(JevObservation.id)).join(
+            MarketSample, JevObservation.sample_id == MarketSample.id,
+        ).where(
+            MarketSample.chain_id == chain_id,
+            MarketSample.symbol == symbol,
+            JevObservation.observed_at >= account.created_at,
+            JevObservation.observed_at <= cutoff,
+            JevObservation.cost_status == "unknown",
+        )) or 0
+        pilot_data = {
+            "started_at": _aware(account.created_at).isoformat(),
+            "ends_at": pilot_end(account).isoformat(),
+            "finished_at": None if account.finished_at is None else _aware(account.finished_at).isoformat(),
+            "status": "finished" if account.finished_at is not None else "awaiting_close" if _now() >= pilot_end(account) else "running" if control.simulation_enabled else "paused",
+            "decision_count": decision_count,
+            "filled_order_count": filled_count,
+            "ai_cost_reported_usd": None if ai_cost is None else str(ai_cost),
+            "ai_cost_unknown_count": unknown_cost_count,
+            "final_equity_usdc": None if account.final_equity_usdc is None else str(account.final_equity_usdc),
+            "days": PILOT_DAYS,
+            "goal_days": GOAL_DAYS,
+            "goal_equity_usdc": str(GOAL_EQUITY_USDC),
         }
 
     open_order = _active_order(db, chain_id, symbol)
@@ -394,6 +475,7 @@ def simulation_payload(db: Session, control: TerminalControl, sample: MarketSamp
         "enabled": control.simulation_enabled,
         "mode": "dry_run",
         "account": account_data,
+        "pilot": pilot_data,
         "open_order": serialize_order(open_order),
         "orders": [serialize_order(order) for order in recent_orders],
         "decisions": decisions_data,

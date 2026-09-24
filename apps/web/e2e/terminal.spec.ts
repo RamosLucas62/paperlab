@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("terminal keeps the dry-run simulator visibly disabled until it is explicitly enabled", async ({ page }) => {
+test("pilot stays virtual and shows its limits before activation", async ({ page }) => {
   const password = process.env.ADMIN_PASSWORD;
   test.skip(!password, "Set temporary administrator credentials before running Playwright.");
 
@@ -9,7 +9,7 @@ test("terminal keeps the dry-run simulator visibly disabled until it is explicit
     contentType: "application/json",
     body: JSON.stringify({
       configuration: {
-        market_configured: true, market_address_hint: "0x1234…abcd", symbol: "MON/USDC", chain_id: 10143,
+        market_configured: true, kuru_feed_configured: true, market_address_hint: "0x1234…abcd", symbol: "MON/USDC", chain_id: 10143,
         rpc_configured: true, jev_configured: true, jev_model: "typesafe/jev-1.13",
         ai_call_budget_usd: "0.10", ai_daily_budget_usd: "2.00", jev_interval_seconds: 120,
       },
@@ -32,7 +32,7 @@ test("terminal keeps the dry-run simulator visibly disabled until it is explicit
         cost_usd: "0.002", cost_status: "reported", latency_ms: 81,
       }],
       simulation: {
-        enabled: false, mode: "dry_run", account: null, open_order: null, orders: [], decisions: [],
+        enabled: false, mode: "dry_run", pilot: null, account: null, open_order: null, orders: [], decisions: [],
         assumptions: {
           order_notional_usdc: "10.00", minimum_confidence: "0.80", order_ttl_seconds: 120,
           fill_rule: "A ordem limite é considerada preenchida quando a melhor cotação oposta toca/cruza o preço; fila e impacto de mercado não são modelados.",
@@ -49,10 +49,9 @@ test("terminal keeps the dry-run simulator visibly disabled until it is explicit
   await page.getByLabel("Senha").fill(password!);
   await page.getByRole("button", { name: "Entrar" }).click();
 
-  await expect(page.getByText("POSTURA OBSERVACIONAL")).toBeVisible();
-  await expect(page.getByText("HOLD", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("72% confiança reportada")).toBeVisible();
-  await expect(page.getByText("DRY RUN DESATIVADO")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Ativar DRY RUN" })).toBeEnabled();
-  await expect(page.getByText("Não há carteira nem execução real", { exact: false })).toBeVisible();
+  await expect(page.getByText("Avaliação ainda não iniciada")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Iniciar piloto de 5 dias" })).toBeEnabled();
+  await expect(page.getByText("US$ 10 por ordem")).toBeVisible();
+  await page.getByText("Ver decisões, ordens e detalhes do método").click();
+  await expect(page.getByText("Não há carteira conectada, assinatura ou envio de transações.", { exact: false })).toBeVisible();
 });

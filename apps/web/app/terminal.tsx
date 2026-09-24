@@ -2,39 +2,29 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+type Order = { side: string; status: string; quantity: string; limit_price: string; notional_usdc: string; at: string; filled_at: string | null; fill_price: string | null };
+type Pilot = { started_at: string; ends_at: string; finished_at: string | null; status: "running" | "paused" | "awaiting_close" | "finished"; decision_count: number; filled_order_count: number; ai_cost_reported_usd: string | null; ai_cost_unknown_count: number; final_equity_usdc: string | null; days: number; goal_days: number; goal_equity_usdc: string };
 type TerminalData = {
-  configuration: { market_configured: boolean; kuru_feed_configured: boolean; market_address_hint: string | null; symbol: string; chain_id: number; rpc_configured: boolean; jev_configured: boolean; jev_model: string; ai_call_budget_usd: string; ai_daily_budget_usd: string; jev_interval_seconds: number };
-  control: { monitor_enabled: boolean; jev_enabled: boolean; simulation_enabled: boolean; status: string; last_error: string | null; last_block_number: number | null; last_sample_at: string | null; last_jev_at: string | null };
-  market: { symbol: string; best_bid: string; best_ask: string; mid_price: string; spread_bps: string; block_number: number | null; observed_at: string } | null;
-  samples: { at: string; mid_price: string; best_bid: string; best_ask: string; spread_bps: string }[];
-  events: { at: string; side: string; price: string; size: string | null; tx_hash: string | null }[];
-  jev_observations: { at: string; status: string; model: string; result: Record<string, { choice?: string; confidence?: string; probabilities?: Record<string, string> }> | null; message: string; cost_usd: string | null; cost_status: string; latency_ms: number }[];
+  configuration: { market_configured: boolean; kuru_feed_configured: boolean; symbol: string; chain_id: number; jev_configured: boolean; jev_model: string; ai_daily_budget_usd: string; jev_interval_seconds: number };
+  control: { monitor_enabled: boolean; jev_enabled: boolean; simulation_enabled: boolean; status: string; last_error: string | null; last_sample_at: string | null; last_block_number: number | null };
+  market: { mid_price: string; best_bid: string; best_ask: string; observed_at: string } | null;
+  samples: { at: string; mid_price: string }[];
+  jev_observations: { at: string; status: string; result: Record<string, { choice?: string; confidence?: string }> | null; cost_usd: string | null; cost_status: string }[];
   simulation: {
     enabled: boolean;
-    mode: string;
-    account: { starting_cash_usdc: string; cash_usdc: string; position_qty: string; average_entry_price: string; mark_price: string | null; marked_at: string | null; mark_stale: boolean; position_value_usdc: string | null; equity_usdc: string | null; realized_pnl_usdc: string; unrealized_pnl_usdc: string | null; total_pnl_usdc: string | null } | null;
-    open_order: SimulationOrder | null;
-    orders: SimulationOrder[];
-    decisions: { stance: string; confidence: string | null; status: string; reason: string; at: string; order: SimulationOrder | null }[];
-    assumptions: { order_notional_usdc: string; minimum_confidence: string; order_ttl_seconds: number; fill_rule: string; cost_rule: string; starting_cash_usdc: string };
+    pilot: Pilot | null;
+    account: { starting_cash_usdc: string; cash_usdc: string; position_qty: string; equity_usdc: string | null; total_pnl_usdc: string | null; mark_stale: boolean } | null;
+    open_order: Order | null;
+    orders: Order[];
+    decisions: { stance: string; status: string; reason: string; at: string; order: Order | null }[];
+    assumptions: { order_notional_usdc: string; minimum_confidence: string; fill_rule: string; cost_rule: string };
   };
-  safety: { orders_enabled: boolean; transaction_signing: boolean; mode: string };
 };
 
-type SimulationOrder = { side: string; status: string; quantity: string; limit_price: string; notional_usdc: string; confidence: string | null; at: string; expires_at: string; filled_at: string | null; fill_price: string | null; fill_quantity: string | null };
-
-function price(value?: string | null) {
-  if (value == null) return "—";
-  return Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
-}
-function usdc(value: string) { return `${Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`; }
-function signedUsdc(value: string) { const amount = Number(value); return `${amount > 0 ? "+" : ""}${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`; }
-function time(value?: string | null) {
-  return value ? new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value)) : "—";
-}
-function statusLabel(status: string) {
-  return ({ stopped: "Desconectado", starting: "Conectando", connected: "Feed ativo", error: "Atenção" } as Record<string, string>)[status] ?? status;
-}
+const usd = (value?: string | number | null) => value == null ? "—" : new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD" }).format(Number(value));
+const decimal = (value?: string | number | null, digits = 2) => value == null ? "—" : Number(value).toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+const date = (value?: string | null) => value ? new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }).format(new Date(value)) : "—";
+const clock = (value?: string | null) => value ? new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "—";
 
 async function request<T>(path: string, csrf: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
@@ -46,160 +36,94 @@ async function request<T>(path: string, csrf: string, init: RequestInit = {}): P
   return body as T;
 }
 
-function MarketChart({ samples, symbol }: { samples: TerminalData["samples"]; symbol: string }) {
-  const chart = useMemo(() => {
-    if (!samples.length) return null;
+function MarketChart({ samples }: { samples: TerminalData["samples"] }) {
+  const path = useMemo(() => {
     const values = samples.map((sample) => Number(sample.mid_price)).filter(Number.isFinite);
-    if (!values.length) return null;
-    const minValue = Math.min(...values), maxValue = Math.max(...values);
-    const padding = (maxValue - minValue) * 0.12 || Math.max(maxValue * 0.001, 0.000001);
-    const min = minValue - padding, max = maxValue + padding;
-    const points = values.map((value, index) => {
-      const x = values.length < 2 ? 40 : 12 + index * 976 / (values.length - 1);
-      const y = 272 - ((value - min) / (max - min)) * 244;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    });
-    return { path: points.map((point, index) => `${index ? "L" : "M"}${point}`).join(" "), first: values[0], last: values.at(-1)!, min, max };
+    if (!values.length) return "";
+    const low = Math.min(...values), high = Math.max(...values);
+    const pad = (high - low) * 0.15 || high * 0.001 || 0.001;
+    return values.map((value, index) => `${index ? "L" : "M"}${values.length === 1 ? 500 : 16 + index * 968 / (values.length - 1)},${230 - (value - low + pad) * 210 / (high - low + pad * 2)}`).join(" ");
   }, [samples]);
-  return <div className="terminal-chart-wrap">
-    {chart ? <>
-      <svg className="terminal-chart" viewBox="0 0 1000 300" role="img" aria-label={`Preço médio observado de ${symbol}`} preserveAspectRatio="none">
-        {[0, 1, 2, 3].map((row) => <line key={row} x1="0" x2="1000" y1={28 + row * 72} y2={28 + row * 72} />)}
-        <path d={chart.path} />
-      </svg>
-      <div className="terminal-chart-ends"><span>{price(String(chart.min))}</span><span>{price(String(chart.max))}</span></div>
-      <div className="terminal-chart-caption"><span>{time(samples[0]?.at)}</span><span>amostras recebidas da Kuru</span><span>{time(samples.at(-1)?.at)}</span></div>
-    </> : <div className="terminal-chart-empty"><span>◌</span><strong>Aguardando dados do mercado</strong><small>Inicie o monitor para receber o livro da Kuru.</small></div>}
-  </div>;
+  return <div className="pilot-chart-wrap">{path ? <svg viewBox="0 0 1000 250" role="img" aria-label="Preço recente observado na Kuru" preserveAspectRatio="none"><line x1="0" y1="125" x2="1000" y2="125" /><path d={path} /></svg> : <p>Aguardando as primeiras cotações do mercado.</p>}</div>;
 }
 
 export default function MarketTerminal({ csrf, onMessage }: { csrf: string; onMessage: (message: string) => void }) {
   const [data, setData] = useState<TerminalData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
+  const [busy, setBusy] = useState(false);
+  const [now, setNow] = useState<number | null>(null);
   const refresh = useCallback(async () => {
     const next = await request<TerminalData>("/api/terminal", csrf);
-    setData(next);
-    setError("");
+    setData(next); setError(""); setNow(Date.now());
   }, [csrf]);
-
   useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const next = await request<TerminalData>("/api/terminal", csrf);
-        if (active) { setData(next); setError(""); }
-      } catch (err) {
-        if (active) setError(err instanceof Error ? err.message : "Não foi possível carregar o terminal.");
-      } finally { if (active) setLoading(false); }
-    };
-    void load();
-    const interval = window.setInterval(() => { void load(); }, 5000);
-    return () => { active = false; window.clearInterval(interval); };
-  }, [csrf]);
-
-  async function control(action: "start_monitor" | "stop_monitor" | "enable_jev" | "disable_jev" | "enable_simulation" | "disable_simulation") {
+    void refresh().catch((err) => setError(err instanceof Error ? err.message : "Não foi possível carregar o piloto."));
+    const timer = window.setInterval(() => void refresh().catch((err) => setError(err instanceof Error ? err.message : "Não foi possível atualizar o piloto.")), 5000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
+  async function control(action: "start_pilot" | "pause_pilot") {
     setBusy(true); setError("");
     try {
       await request("/api/terminal/control", csrf, { method: "POST", body: JSON.stringify({ action }) });
       await refresh();
-      onMessage(action === "start_monitor" ? "Monitor solicitado. Aguardando conexão com Monad e Kuru." : action === "stop_monitor" ? "Monitor parado; Jev e DRY RUN desativados." : action === "enable_jev" ? "Jev habilitado para classificações observacionais dentro do limite de custo." : action === "disable_jev" ? "Jev e DRY RUN desativados; ordens simuladas pendentes canceladas." : action === "enable_simulation" ? "DRY RUN ativado. Ordens e preenchimentos serão apenas simulados." : "DRY RUN parado; ordens simuladas pendentes canceladas.");
+      onMessage(action === "start_pilot" ? "Piloto solicitado. O prazo começa na primeira cotação válida da Kuru." : "Piloto pausado. O prazo de cinco dias continua correndo; as ordens pendentes foram canceladas.");
     } catch (err) { setError(err instanceof Error ? err.message : "A ação não foi concluída."); }
     finally { setBusy(false); }
   }
 
-  const current = data?.market;
+  const account = data?.simulation.account;
+  const pilot = data?.simulation.pilot;
+  const initial = Number(account?.starting_cash_usdc ?? 1000);
+  const equity = account?.equity_usdc == null ? null : Number(account.equity_usdc);
+  const pnl = account?.total_pnl_usdc == null ? null : Number(account.total_pnl_usdc);
+  const returnPct = pnl == null ? null : pnl / initial * 100;
+  const elapsed = pilot && now ? Math.max(0, Math.min(pilot.days, (now - new Date(pilot.started_at).getTime()) / 86_400_000)) : 0;
+  const daysLeft = pilot && now ? Math.max(0, (new Date(pilot.ends_at).getTime() - now) / 86_400_000) : null;
+  const paceEquity = initial * Math.pow(Number(pilot?.goal_equity_usdc ?? 10000) / initial, Number(pilot?.days ?? 5) / Number(pilot?.goal_days ?? 90));
+  const feedFresh = data?.control.last_sample_at && now ? now - new Date(data.control.last_sample_at).getTime() < 30_000 : false;
+  const running = Boolean(data?.control.simulation_enabled && data?.control.jev_enabled && data?.control.monitor_enabled);
+  const ready = Boolean(data?.configuration.market_configured && data?.configuration.kuru_feed_configured && data?.configuration.jev_configured);
+  const latestDecision = data?.simulation.decisions[0];
   const lastJev = data?.jev_observations[0];
-  const stance = lastJev?.status === "ready" ? lastJev.result?.stance : undefined;
-  const chainId = data?.configuration.chain_id;
-  const network = networkLabel(chainId);
-  return <section className="terminal-view" aria-label="Terminal JEV">
-    <div className="terminal-safety-banner"><span className="terminal-live-dot" /><div><strong>FEED REAL · EXECUÇÃO SOMENTE EM DRY RUN</strong><span>Livro e trades vêm da {network}. Ordens, fills e posição são fictícios; não há carteira, assinatura ou envio de transações.</span></div><span className="terminal-mode-chip">SEM CARTEIRA</span></div>
-    {error && <div className="terminal-error" role="alert">{error}</div>}
+  const network = data?.configuration.chain_id === 143 ? "Monad Mainnet" : data?.configuration.chain_id === 10143 ? "Monad Testnet" : "Monad";
+  const stateLabel = !pilot ? "Ainda não iniciado" : pilot.status === "finished" ? "Concluído" : pilot.status === "awaiting_close" ? "Aguardando cotação final" : running ? "Em andamento" : "Pausado";
 
-    <div className="terminal-heading">
-      <div><div className="terminal-kicker">PAPERLAB <span>·</span> {network.toUpperCase()} <span>·</span> {data?.configuration.symbol ?? "MON/USDC"}</div><h2>Terminal JEV</h2><p>Acompanhe o livro de ofertas e as classificações de mercado em um ambiente de sombra.</p></div>
-      <div className="terminal-actions">
-        {data?.control.monitor_enabled ? <button className="terminal-button secondary" onClick={() => control("stop_monitor")} disabled={busy}>■ Parar monitor</button> : <button className="terminal-button primary" onClick={() => control("start_monitor")} disabled={busy || !data?.configuration.market_configured || !data?.configuration.kuru_feed_configured}>▶ Iniciar monitor</button>}
-        {data?.control.jev_enabled ? <button className="terminal-button secondary" onClick={() => control("disable_jev")} disabled={busy}>Desativar Jev</button> : <button className="terminal-button outline" onClick={() => control("enable_jev")} disabled={busy || !data?.configuration.jev_configured || !data?.control.monitor_enabled}>Ativar Jev</button>}
-        {data?.control.simulation_enabled ? <button className="terminal-button simulation-stop" onClick={() => control("disable_simulation")} disabled={busy}>Parar DRY RUN</button> : <button className="terminal-button simulation-start" onClick={() => control("enable_simulation")} disabled={busy || !data?.control.monitor_enabled || !data?.control.jev_enabled || !current}>Ativar DRY RUN</button>}
-      </div>
+  return <section className="pilot-view" aria-label="Piloto de cinco dias">
+    <div className="pilot-intro">
+      <div><span className="pilot-eyebrow">EXPERIMENTO · CAPITAL VIRTUAL</span><h1>Um robô de IA vale um teste real?</h1><p>Observe por cinco dias como ele decide e como uma carteira simulada de {usd(initial)} evolui no mercado MON/USDC.</p></div>
+      <span className="pilot-status"><i className={running && feedFresh ? "live" : ""} />{stateLabel}</span>
     </div>
 
-    <div className="terminal-status-line"><span className={`terminal-status status-${data?.control.status ?? "stopped"}`}><i />{statusLabel(data?.control.status ?? "stopped")}</span><span className="terminal-status-separator" /><span>Último bloco <strong>{data?.control.last_block_number?.toLocaleString("en-US") ?? "—"}</strong></span><span className="terminal-status-separator" /><span>Atualizado <strong>{time(data?.control.last_sample_at)}</strong></span><span className="terminal-status-spacer" /><span className="terminal-market-hint">Mercado {data?.configuration.market_address_hint ?? "não configurado"}</span></div>
+    <div className="pilot-goal-strip"><div><span>META DE LONGO PRAZO</span><strong>{usd(initial)} → {usd(pilot?.goal_equity_usdc ?? 10000)}</strong><small>em 90 dias · hipótese a avaliar</small></div><p>Em cinco dias, medimos comportamento, operações e resultado virtual. Esse período não confirma que o desempenho continuaria por 90 dias.</p></div>
+    <div className="pilot-verdict"><strong>{!pilot ? "Avaliação ainda não iniciada" : pilot.status === "finished" ? "Cinco dias concluídos; evidência ainda limitada" : (pilot.filled_order_count === 0 ? "Ainda não há operações para avaliar" : "Piloto em observação")}</strong><span>{!pilot ? "Inicie o piloto para registrar decisões e resultado virtual." : pilot.status === "finished" ? "Antes de considerar dinheiro real, ainda é preciso testar exposição compatível com US$ 1.000, custos de execução e um período maior." : pilot.filled_order_count === 0 ? "O robô pode optar por não operar quando os filtros rejeitam os sinais. Isso também é um resultado do teste." : "Acompanhe saldo, perdas e motivos das decisões até o encerramento do quinto dia."}</span></div>
 
-    {!data?.configuration.market_configured && <div className="terminal-setup-note"><strong>Falta informar o mercado Kuru.</strong><span>Adicione <code>KURU_MARKET_ADDRESS</code> no EasyPanel. Para observação somente leitura na Monad Mainnet, o par MON/USDC verificado é <code>0x065c9d28e428a0db40191a54d33d5b7c71a9c394</code>. Endereços não são intercambiáveis entre redes. Depois salve e reimplante <code>api</code> e <code>bot</code>.</span></div>}
-    {!data?.configuration.kuru_feed_configured && <div className="terminal-setup-note"><strong>Feed Kuru de Testnet indisponível.</strong><span>O RPC da Monad Testnet está configurado, mas o SDK atual da Kuru não documenta um feed WSS ativo para essa rede; o host antigo é legado e não está validado. O monitor fica bloqueado para evitar conectar a uma fonte incorreta. Para ver dados Kuru agora, a alternativa é selecionar Monad Mainnet em modo somente leitura, sem carteira nem envio de transações.</span></div>}
-    {data?.control.last_error && <div className="terminal-error" role="status">{data.control.last_error}</div>}
+    {error && <div className="pilot-error" role="alert">{error}</div>}
+    {data?.control.last_error && <div className="pilot-error" role="status">Conexão: {data.control.last_error}</div>}
+    {!ready && data && <div className="pilot-setup"><strong>Configuração incompleta</strong><span>Confira no EasyPanel o endereço do mercado Kuru, o feed WSS e a chave/modelo OpenRouter. O piloto começa após esses dados estarem disponíveis.</span></div>}
 
-    <div className="terminal-stats-grid">
-      <article className="terminal-stat-card"><span>PREÇO MÉDIO · {current?.symbol ?? data?.configuration.symbol ?? "MON/USDC"}</span><strong>{price(current?.mid_price)}</strong><small>bid {price(current?.best_bid)} <b>·</b> ask {price(current?.best_ask)}</small></article>
-      <article className="terminal-stat-card"><span>REDE · BLOCO</span><strong>{network}</strong><small>{data?.control.last_block_number?.toLocaleString("en-US") ?? "aguardando RPC"}</small></article>
-      <article className="terminal-stat-card"><span>LEITURA JEV · SOMBRA</span><strong>{stance ? stanceLabel(stance.choice) : "—"}</strong><small>{stance?.confidence ? `${percent(stance.confidence)} de confiança reportada` : data?.control.jev_enabled ? "aguardando próxima leitura" : "Jev desativado"}</small></article>
+    <div className="pilot-action-row">
+      <div><strong>{pilot ? `Início ${date(pilot.started_at)} · término previsto ${date(pilot.ends_at)}` : "O relógio começa com a primeira cotação válida."}</strong><span>{feedFresh ? `Feed Kuru ativo · última cotação ${clock(data?.control.last_sample_at)}` : "Feed sem cotação recente"} · {network} · somente leitura</span></div>
+      {pilot?.status !== "finished" && (running ? <button className="pilot-button secondary" disabled={busy} onClick={() => control("pause_pilot")}>Pausar piloto</button> : <button className="pilot-button primary" disabled={busy || !ready} onClick={() => control("start_pilot")}>{pilot?.status === "awaiting_close" ? "Obter cotação final" : pilot ? "Retomar piloto" : "Iniciar piloto de 5 dias"}</button>)}
     </div>
 
-    <div className="terminal-main-grid">
-      <article className="terminal-panel terminal-chart-panel"><div className="terminal-panel-heading"><div><span className="terminal-kicker">MERCADO · SOMENTE LEITURA</span><h3>{data?.configuration.symbol ?? "MON/USDC"}</h3></div><div className="terminal-price-tag"><small>MID</small><strong>{price(current?.mid_price)}</strong></div></div><MarketChart samples={data?.samples ?? []} symbol={data?.configuration.symbol ?? "MON/USDC"} /><div className="terminal-panel-foot"><span><i className="terminal-cyan-dot" /> preço médio observado</span><span>{data?.samples.length ?? 0} amostras na janela visível</span></div></article>
+    <section className="pilot-scoreboard" aria-label="Resultado do piloto">
+      <article className="pilot-lead-metric"><span>CARTEIRA VIRTUAL AGORA</span><strong>{usd(equity)}</strong><small>{account?.mark_stale && Number(account.position_qty) > 0 && pilot?.status !== "finished" ? "Sem cotação recente para marcar a posição" : "Caixa + posição a preço observado · bruto"}</small></article>
+      <article><span>GANHO OU PERDA</span><strong className={pnl == null ? "" : pnl < 0 ? "down" : pnl > 0 ? "up" : ""}>{pnl == null ? "—" : `${pnl > 0 ? "+" : ""}${usd(pnl)}`}</strong><small>{returnPct == null ? "Aguardando início" : `${returnPct > 0 ? "+" : ""}${decimal(returnPct)}% sobre ${usd(initial)}`}</small></article>
+      <article><span>TEMPO DO PILOTO</span><strong>{pilot ? `${decimal(elapsed, 1)} / ${pilot.days} dias` : "0 / 5 dias"}</strong><small>{pilot?.status === "finished" ? `Fechado ${date(pilot.finished_at)}` : daysLeft == null ? "Aguardando primeira cotação" : `${decimal(daysLeft, 1)} dias até o fim`}</small></article>
+      <article><span>ORDENS PREENCHIDAS</span><strong>{pilot?.filled_order_count ?? 0}</strong><small>{pilot?.decision_count ?? 0} decisões avaliadas · {data?.simulation.open_order ? "1 ordem pendente" : "sem ordem pendente"}</small></article>
+    </section>
 
-      <article className="terminal-panel terminal-jev-panel"><div className="terminal-panel-heading"><div><span className="terminal-kicker">OPENROUTER · {data?.configuration.jev_model ?? "JEV"}</span><h3>Observações do Jev</h3></div><span className={data?.configuration.jev_configured ? "terminal-config-ok" : "terminal-config-pending"}>{data?.configuration.jev_configured ? "CONFIGURADO" : "CHAVE PENDENTE"}</span></div>
-        <div className={`terminal-stance-card ${stance ? `stance-${stance.choice}` : "stance-empty"}`}><div><span>POSTURA OBSERVACIONAL</span><strong>{stance ? stanceLabel(stance.choice) : "AGUARDANDO JEV"}</strong></div><small>{stance?.confidence ? `${percent(stance.confidence)} confiança reportada` : "Sem ordem, posição ou recomendação."}</small>{stance?.probabilities && <div className="terminal-stance-probabilities">{Object.entries(stance.probabilities).map(([key, value]) => <span key={key}>{stanceLabel(key)} <b>{percent(value)}</b></span>)}</div>}</div>
-        <div className="terminal-jev-summary"><strong>{data?.control.jev_enabled ? "Jev observando" : "Aguardando ativação"}</strong><p>{data?.control.jev_enabled ? `Uma leitura de sombra a cada ${data?.configuration.jev_interval_seconds ?? 120} segundos, sujeita ao orçamento diário. O rótulo nunca aciona uma ordem.` : "As chamadas são opcionais e podem ter custo. Ative após configurar OPENROUTER_API_KEY no servidor."}</p></div>
-        <div className="terminal-jev-list">{data?.jev_observations.slice(0, 5).map((item, index) => <div className="terminal-jev-row" key={`${item.at}-${index}`}><span className={`terminal-jev-indicator ${item.status}`} /><div><strong>{item.status === "ready" ? "Leitura de sombra registrada" : item.status === "budget_blocked" ? "Limite de custo atingido" : "Chamada sem resultado"}</strong><small>{time(item.at)} · {item.latency_ms} ms{item.cost_usd ? ` · US$ ${item.cost_usd}` : item.cost_status === "unknown" ? " · custo não informado pelo provedor" : ""}</small>{item.result && <div className="terminal-jev-choices">{Object.entries(item.result).map(([key, value]) => <span key={key}>{jevLabel(key)} <b>{choiceLabel(value.choice)}</b>{value.confidence ? ` · ${percent(value.confidence)}` : ""}</span>)}</div>}<p>{item.message}</p></div></div>)}{!data?.jev_observations.length && <div className="terminal-empty-note">Nenhuma leitura ainda. O Jev não roda automaticamente.</div>}</div>
-        <div className="terminal-budget-row"><span>Teto por chamada</span><strong>US$ {data?.configuration.ai_call_budget_usd ?? "0.10"}</strong><span>Teto diário</span><strong>US$ {data?.configuration.ai_daily_budget_usd ?? "2.00"}</strong></div>
-      </article>
+    <section className="pilot-progress" aria-label="Progresso dos cinco dias"><div className="pilot-progress-head"><strong>Janela de observação</strong><span>{pilot ? `${decimal(elapsed / pilot.days * 100, 0)}% do período` : "Ainda não iniciada"}</span></div><div className="pilot-progress-track"><span style={{ width: `${pilot ? Math.min(100, elapsed / pilot.days * 100) : 0}%` }} /></div><div className="pilot-progress-foot"><span>Dia 0 · {pilot ? date(pilot.started_at) : "—"}</span><span>Dia 5 · {pilot ? date(pilot.ends_at) : "—"}</span></div></section>
+
+    <div className="pilot-two-col">
+      <article className="pilot-card"><div className="pilot-card-head"><div><span className="pilot-eyebrow">CONTEXTO DA META</span><h2>Qual seria o ritmo necessário?</h2></div><strong>{usd(paceEquity)}</strong></div><p>Para transformar {usd(initial)} em {usd(pilot?.goal_equity_usdc ?? 10000)} em 90 dias com crescimento uniforme, o saldo precisaria chegar perto de {usd(paceEquity)} após cinco dias. É só uma régua matemática, não uma previsão.</p><div className="pilot-compare"><span>Resultado observado</span><strong>{usd(equity)}</strong><span>Régua após 5 dias</span><strong>{usd(paceEquity)}</strong></div><small>Mesmo superar essa régua por cinco dias não comprova a meta de 90 dias.</small></article>
+      <article className="pilot-card"><div className="pilot-card-head"><div><span className="pilot-eyebrow">ÚLTIMA DECISÃO</span><h2>O que o robô fez?</h2></div><strong>{latestDecision ? latestDecision.status === "queued" ? "Ordem virtual" : latestDecision.status === "hold" ? "Aguardou" : "Não operou" : "Aguardando"}</strong></div><p>{latestDecision?.reason ?? "Aguardando a primeira análise do Jev. O robô só cria ordem virtual quando todos os filtros aprovam a leitura."}</p><div className="pilot-compare"><span>Última análise</span><strong>{clock(latestDecision?.at)}</strong><span>Modelo</span><strong>{data?.configuration.jev_model ?? "—"}</strong></div><small>{lastJev?.status === "ready" ? "Classificação recebida da OpenRouter." : running ? "Aguardando ou reavaliando dados." : "O modelo roda apenas enquanto o piloto está ativo."}</small></article>
     </div>
 
-    <TerminalSimulationPanel simulation={data?.simulation} enabled={Boolean(data?.control.simulation_enabled)} />
+    <section className="pilot-card pilot-market"><div className="pilot-card-head"><div><span className="pilot-eyebrow">DADOS REAIS · CARTEIRA VIRTUAL</span><h2>Mercado MON/USDC</h2></div><strong>{data?.market ? decimal(data.market.mid_price, 6) : "—"}</strong></div><MarketChart samples={data?.samples ?? []} /><div className="pilot-chart-foot"><span>Preço de mercado observado; o gráfico não representa o patrimônio.</span><span>{data?.samples.length ?? 0} amostras recentes</span></div></section>
 
-    <article className="terminal-panel terminal-tape-panel"><div className="terminal-panel-heading"><div><span className="terminal-kicker">EVENTOS DO FEED KURU</span><h3>Negociações recentes · mercado real</h3></div><span className="terminal-tape-count">{data?.events.length ?? 0} eventos</span></div><div className="terminal-tape-scroll"><table className="terminal-tape"><thead><tr><th>HORÁRIO · SP</th><th>LADO AGRESSOR</th><th>PREÇO</th><th>IDENTIFICADOR</th></tr></thead><tbody>{data?.events.map((item, index) => <tr key={`${item.at}-${index}`}><td>{time(item.at)}</td><td><span className={`terminal-side ${item.side === "BUY" ? "buy" : "sell"}`}>{item.side}</span></td><td>{price(item.price)}</td><td className="terminal-hash">{txHash(item.tx_hash) ? <a href={txExplorerUrl(item.tx_hash!, chainId)} target="_blank" rel="noreferrer">{`${item.tx_hash!.slice(0, 9)}…${item.tx_hash!.slice(-5)}`}</a> : "—"}</td></tr>)}</tbody></table>{!data?.events.length && <div className="terminal-empty-note">{loading ? "Carregando eventos…" : "A fita será preenchida quando o feed Kuru publicar negociações."}</div>}</div></article>
+    <section className="pilot-card pilot-reality"><span className="pilot-eyebrow">O QUE ESTE PILOTO AINDA NÃO MEDE</span><h2>Como ler o resultado</h2><div className="pilot-reality-grid"><p><strong>US$ 10 por ordem</strong>O simulador atual usa apenas {usd(data?.simulation.assumptions.order_notional_usdc ?? 10)} por entrada. Com essa exposição, o teste não representa uma estratégia que utiliza todo o capital de {usd(initial)}.</p><p><strong>Retorno bruto</strong>Taxas, gas, slippage, fila do livro e impacto no preço não estão incluídos. O resultado real pode ser menor.</p><p><strong>Cinco dias de amostra</strong>{pilot?.filled_order_count ? `${pilot.filled_order_count} preenchimentos virtuais registrados.` : "Nenhum preenchimento virtual até agora."} Poucas operações não sustentam uma conclusão sobre três meses.</p><p><strong>Custo do modelo</strong>{pilot?.ai_cost_reported_usd ? `${usd(pilot.ai_cost_reported_usd)} reportados pela OpenRouter.` : "Ainda sem custo reportado."}{pilot?.ai_cost_unknown_count ? ` ${pilot.ai_cost_unknown_count} chamadas têm custo desconhecido.` : ""}</p></div></section>
 
-    <div className="terminal-bottom-note"><span>ⓘ</span><p>BUY/SELL na fita é o lado agressor do mercado real e nunca aciona o simulador. Somente classificações Jev válidas, aprovadas por filtros determinísticos, podem gerar ordem local de DRY RUN. Não há carteira nem execução real; taxas e slippage ficam fora do P&L bruto.</p></div>
+    <details className="pilot-details"><summary>Ver decisões, ordens e detalhes do método</summary><div className="pilot-details-content"><h2>Decisões recentes</h2>{data?.simulation.decisions.length ? <div className="pilot-table-scroll"><table><thead><tr><th>Horário</th><th>Leitura</th><th>Resultado</th><th>Motivo</th></tr></thead><tbody>{data.simulation.decisions.map((item, index) => <tr key={`${item.at}-${index}`}><td>{date(item.at)}</td><td>{item.stance}</td><td>{item.order ? `${item.order.side} · ${item.order.status}` : item.status}</td><td>{item.reason}</td></tr>)}</tbody></table></div> : <p>Ainda não há decisões neste piloto.</p>}<h2>Regras atuais</h2><p>Confiança mínima de {decimal(Number(data?.simulation.assumptions.minimum_confidence ?? 0.8) * 100, 0)}%. {data?.simulation.assumptions.fill_rule}</p><p>{data?.simulation.assumptions.cost_rule}</p><p>Caixa virtual: {usd(account?.cash_usdc)} · posição: {decimal(account?.position_qty ?? 0, 4)} MON. Não há carteira conectada, assinatura ou envio de transações.</p></div></details>
   </section>;
 }
-
-function TerminalSimulationPanel({ simulation, enabled }: {
-  simulation: TerminalData["simulation"] | undefined;
-  enabled: boolean;
-}) {
-  const account = simulation?.account;
-  const pnl = account?.total_pnl_usdc;
-  const pnlClass = pnl == null ? "" : Number(pnl) > 0 ? "positive" : Number(pnl) < 0 ? "negative" : "neutral";
-  return <section className="terminal-panel terminal-simulation-panel" aria-label="Simulador de ordens DRY RUN">
-    <div className="terminal-panel-heading terminal-simulation-heading">
-      <div><span className="terminal-kicker">PAPER EXECUTION · SEM TRANSAÇÃO</span><h3>Simulador de ordens</h3><p>O feed é real; saldo, posições, ordens e fills são fictícios.</p></div>
-      <span className={`terminal-simulation-badge ${enabled ? "active" : "inactive"}`}>{enabled ? "DRY RUN ATIVO" : "DRY RUN DESATIVADO"}</span>
-    </div>
-
-    <div className="terminal-simulation-metrics">
-      <article><span>PATRIMÔNIO FICTÍCIO</span><strong>{account?.equity_usdc == null ? "—" : usdc(account.equity_usdc)}</strong><small>caixa + posição marcada pelo mid</small></article>
-      <article><span>P&L BRUTO</span><strong className={pnlClass}>{pnl == null ? "—" : signedUsdc(pnl)}</strong><small>realizado {account ? signedUsdc(account.realized_pnl_usdc) : "—"} · aberto {account?.unrealized_pnl_usdc == null ? "—" : signedUsdc(account.unrealized_pnl_usdc)}</small></article>
-      <article><span>CAIXA SIMULADO</span><strong>{account ? usdc(account.cash_usdc) : "—"}</strong><small>saldo inicial {simulation ? usdc(simulation.assumptions.starting_cash_usdc) : "—"}</small></article>
-      <article><span>POSIÇÃO {account?.position_qty && Number(account.position_qty) > 0 ? "· ABERTA" : "· ZERADA"}</span><strong>{account ? `${Number(account.position_qty).toLocaleString("pt-BR", { maximumFractionDigits: 6 })} MON` : "—"}</strong><small>{account && Number(account.position_qty) > 0 ? `entrada ${price(account.average_entry_price)} · marca ${price(account.mark_price)}${account.mark_stale ? " · cotação antiga" : ""}` : "sem exposição comprada"}</small></article>
-    </div>
-
-    <div className="terminal-simulation-lower">
-      <div className="terminal-open-order">
-        <div className="terminal-mini-heading"><span className="terminal-kicker">ORDEM SIMULADA</span><span className={`terminal-order-state ${simulation?.open_order ? "open" : "idle"}`}>{simulation?.open_order ? "PENDENTE" : "SEM ORDEM PENDENTE"}</span></div>
-        {simulation?.open_order ? <div className="terminal-open-order-detail"><strong className={`terminal-side ${simulation.open_order.side.toLowerCase()}`}>{simulation.open_order.side}</strong><span>{Number(simulation.open_order.quantity).toLocaleString("pt-BR", { maximumFractionDigits: 6 })} MON</span><span>limite {price(simulation.open_order.limit_price)}</span><span>{usdc(simulation.open_order.notional_usdc)}</span><small>expira {time(simulation.open_order.expires_at)}</small></div> : <p>{enabled ? "Aguardando classificação Jev válida com confiança suficiente." : "Ative depois de iniciar o monitor e o Jev."}</p>}
-        <div className="terminal-simulation-assumptions"><span>Ordem <b>{simulation ? usdc(simulation.assumptions.order_notional_usdc) : "—"}</b></span><span>Confiança mínima <b>{simulation ? percent(simulation.assumptions.minimum_confidence) : "—"}</b></span><span>Validade <b>{simulation?.assumptions.order_ttl_seconds ?? "—"} s</b></span></div>
-      </div>
-      <div className="terminal-simulation-method"><span className="terminal-kicker">REGRA DE PREENCHIMENTO</span><p>{simulation?.assumptions.fill_rule ?? "Ordem limite estimada a partir de cotações reais posteriores."}</p><p className="cost-warning">{simulation?.assumptions.cost_rule ?? "Taxas e slippage não modelados; P&L bruto."}</p></div>
-    </div>
-
-    <div className="terminal-simulation-history"><div className="terminal-mini-heading"><div><span className="terminal-kicker">TRILHA DE DECISÕES</span><h4>Classificações e ordens virtuais</h4></div><span className="terminal-tape-count">{simulation?.decisions.length ?? 0} registros</span></div>
-      <div className="terminal-tape-scroll"><table className="terminal-tape"><thead><tr><th>HORÁRIO · SP</th><th>JEV</th><th>FILTRO</th><th>ORDEM / PREENCHIMENTO</th></tr></thead><tbody>{simulation?.decisions.map((item, index) => <tr key={`${item.at}-${index}`}><td>{time(item.at)}</td><td><span className={`terminal-side ${item.stance.toLowerCase()}`}>{item.stance}</span>{item.confidence && <small className="terminal-confidence">{percent(item.confidence)}</small>}</td><td><span className={`terminal-decision-state ${item.status}`}>{decisionLabel(item.status)}</span><small className="terminal-decision-reason">{item.reason}</small></td><td>{item.order ? <><span className={`terminal-side ${item.order.side.toLowerCase()}`}>{item.order.status === "filled" ? "PREENCHIDA" : orderLabel(item.order.status)}</span><small className="terminal-decision-reason">{item.order.status === "filled" ? `${Number(item.order.fill_quantity ?? item.order.quantity).toLocaleString("pt-BR", { maximumFractionDigits: 6 })} MON @ ${price(item.order.fill_price)}` : `${item.order.side} ${Number(item.order.quantity).toLocaleString("pt-BR", { maximumFractionDigits: 6 })} MON @ ${price(item.order.limit_price)}`}</small></> : <span className="terminal-muted">—</span>}</td></tr>)}</tbody></table>{!simulation?.decisions.length && <div className="terminal-empty-note">As avaliações aparecem quando o Jev registrar uma classificação. HOLD, erro e dados fracos não criam ordens.</div>}</div>
-    </div>
-  </section>;
-}
-
-function percent(value?: string) { return value == null ? "—" : `${(Number(value) * 100).toFixed(0)}%`; }
-function stanceLabel(choice?: string) { return ({ buy: "BUY", sell: "SELL", hold: "HOLD" } as Record<string, string>)[choice ?? ""] ?? choice?.toUpperCase() ?? "—"; }
-function txHash(value?: string | null) { return value && /^0x[a-fA-F0-9]{64}$/.test(value) ? value : null; }
-function networkLabel(chainId?: number) { return chainId === 10143 ? "Monad Testnet" : chainId === 143 ? "Monad Mainnet · somente leitura" : chainId ? `Chain ${chainId}` : "aguardando RPC"; }
-function txExplorerUrl(hash: string, chainId?: number) { return `${chainId === 10143 ? "https://testnet.monadscan.com" : "https://monadscan.com"}/tx/${hash}`; }
-function jevLabel(key: string) { return ({ stance: "Postura", relevance: "Relevância", risk: "Risco", sufficiency: "Dados" } as Record<string, string>)[key] ?? key; }
-function choiceLabel(choice?: string) { return ({ buy: "BUY", sell: "SELL", hold: "HOLD", relevant: "relevante", not_relevant: "não relevante", risk_event: "risco", no_risk_event: "sem risco sinalizado", sufficient: "suficientes", insufficient_or_ambiguous: "insuficientes" } as Record<string, string>)[choice ?? ""] ?? choice ?? "—"; }
-function decisionLabel(status: string) { return ({ queued: "ORDEM CRIADA", hold: "SEM SINAL", abstain: "ABSTENÇÃO", blocked: "BLOQUEADO" } as Record<string, string>)[status] ?? status.toUpperCase(); }
-function orderLabel(status: string) { return ({ open: "PENDENTE", filled: "PREENCHIDA", cancelled: "CANCELADA", expired: "EXPIRADA" } as Record<string, string>)[status] ?? status.toUpperCase(); }

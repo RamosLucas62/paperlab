@@ -25,7 +25,7 @@ from paperlab.demo import ensure_default_experiment
 from paperlab.market_feed import OrderBookState, decode_orderbook_message, market_address_is_valid, terminal_jev_questions
 from paperlab.models import JevObservation, MarketEvent, MarketSample, TerminalControl, TerminalSimulationDecision, TerminalSimulationFill, TerminalSimulationOrder
 from paperlab.openrouter import ModelIntegrationError, OpenRouterClient
-from paperlab.simulation import advance_simulation_with_sample, expire_open_orders, record_simulated_decision
+from paperlab.simulation import advance_simulation_with_sample, close_pilot_if_due, ensure_simulation_account, expire_open_orders, record_simulated_decision
 from paperlab.terminal_state import ensure_terminal_control
 
 
@@ -148,9 +148,15 @@ def _persist_message(message: dict, block_number: int | None, book: OrderBookSta
                     # cannot create duplicate paid requests while the feed continues.
                     control.last_jev_at = now
             if sample is not None:
-                advance_simulation_with_sample(db, control, sample, now=now)
+                if control.simulation_enabled:
+                    ensure_simulation_account(db, settings.monad_chain_id, settings.kuru_symbol)
+                if not close_pilot_if_due(db, control, sample, now=now):
+                    advance_simulation_with_sample(db, control, sample, now=now)
+                else:
+                    jev_due = False
             expire_open_orders(db, settings.monad_chain_id, now=now)
-        control.status = "connected"
+        if control.monitor_enabled:
+            control.status = "connected"
         control.last_error = None
         control.updated_at = now
         db.commit()

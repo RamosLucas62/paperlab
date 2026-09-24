@@ -1,6 +1,6 @@
 # Limitações e pendências conhecidas
 
-Esta entrega contém uma DEMO funcional, um terminal conectado a fontes externas somente leitura e um simulador local opt-in. O simulador não é um executor nem um sistema para decisão financeira.
+Esta entrega mostra um piloto de cinco dias com feed externo somente leitura e simulador local. A DEMO antiga permanece no banco, mas não aparece na navegação principal. O simulador não é um executor nem um sistema para decisão financeira.
 
 ## Ainda não implementado no fluxo da aplicação
 
@@ -14,7 +14,10 @@ Esta entrega contém uma DEMO funcional, um terminal conectado a fontes externas
 
 ## Limitações do DRY RUN Monad/Kuru
 
+- A meta de 1.000 para 10.000 USDC em 90 dias exigiria cerca de 13,65% de crescimento composto nos primeiros cinco dias, se o ritmo fosse uniforme. Essa régua é matemática: um resultado de cinco dias não prevê os 85 dias restantes.
+- O prazo de cinco dias começa na primeira cotação válida após ativar a simulação. Pausas não reiniciam o prazo. O fechamento usa a primeira cotação válida recebida no fim ou após o prazo; se o feed estiver indisponível, o resultado final fica pendente até chegar outra cotação.
 - A conta é fictícia: começa com 1.000 USDC virtuais, limita cada ordem a 10 USDC, exige confiança mínima de 80%, permite só uma posição comprada e bloqueia vendas descobertas. Cada ordem limite expira após 120 segundos.
+- Como só 10 USDC podem entrar por ordem e uma única posição comprada é permitida, este piloto mede o comportamento dos sinais e a mecânica local, não a viabilidade de aplicar 1.000 USDC nem de multiplicá-los por dez. A configuração não deve ser ampliada no meio de um piloto já iniciado sem criar um novo livro e registrar novas hipóteses.
 - O preenchimento é uma hipótese local: considera fill integral quando uma cotação oposta posterior toca ou cruza o limite. Não modela fila, liquidez executável, impacto de mercado, latência de execução, taxas, gas nem slippage. Portanto, o P&L mostrado é bruto e pode diferir muito de qualquer execução real.
 - O simulador só considera resultados Jev tipados com postura BUY/SELL/HOLD, relevância, ausência de risco e suficiência dos dados; cada campo precisa superar 80%. HOLD, falhas, limites de custo, dados fracos, exposição existente e posição ausente para venda não geram uma nova ordem.
 - O worker persiste ledger separado por rede e mercado. Trocar rede, parar o monitor ou desativar Jev/DRY RUN cancela ordens pendentes, sem apagar posição ou histórico virtual.
