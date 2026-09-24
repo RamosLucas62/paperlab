@@ -34,5 +34,7 @@ def test_market_address_and_observation_questions_are_explicit():
     assert market_address_is_valid("0x" + "a" * 40)
     assert not market_address_is_valid("0x123")
     questions = terminal_jev_questions("MON/USDC")
-    assert set(questions) == {"relevance", "risk", "sufficiency"}
+    assert set(questions) == {"stance", "relevance", "risk", "sufficiency"}
+    assert set(questions["stance"]["criteria"]) == {"buy", "sell", "hold"}
+    assert "non-executable shadow label" in questions["stance"]["instructions"]
     assert "MON/USDC" in questions["relevance"]["instructions"]

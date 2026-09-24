@@ -33,7 +33,7 @@ Cadastre no editor de ambiente do Compose:
 | `WORKER_INTERVAL_SECONDS` | Opcional; padrão 60. |
 | `MONAD_RPC_URL` | Opcional; padrão `https://rpc.testnet.monad.xyz`. Consulta somente chain ID e altura de bloco. |
 | `MONAD_CHAIN_ID` | Deve ser `10143` (Monad Testnet); a aplicação recusa outro chain ID. |
-| `KURU_WS_URL` | Opcional; padrão `wss://ws.testnet.kuru.io`, endpoint listado no SDK oficial legado da Kuru para testnet. |
+| `KURU_WS_URL` | Opcional; deve ser o feed da testnet. Padrão `wss://ws.testnet.kuru.io`, listado no SDK oficial legado da Kuru. Outros hosts são recusados. |
 | `KURU_MARKET_ADDRESS` | Endereço de um mercado MON/USDC da Kuru implantado na Monad Testnet. Sem ele, o botão de monitor fica desabilitado. Não use endereço da mainnet. |
 | `KURU_SYMBOL` | Opcional; padrão `MON/USDC`, rótulo mostrado no painel. |
 | `TERMINAL_SAMPLE_INTERVAL_SECONDS` | Opcional; intervalo mínimo de gravação das amostras do gráfico; padrão 5 segundos. |

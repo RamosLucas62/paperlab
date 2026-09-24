@@ -6,7 +6,7 @@ Laboratório privado para comparar três versões de uma regra didática: A usa 
 
 - A DEMO sintética continua disponível no painel: login, experimentos, ciclos, diferenças A/B/C rastreáveis e exportação JSON/CSV.
 - O **Terminal JEV** acrescenta feed do livro/negociações Kuru e altura da Monad em modo somente leitura, mais classificações Jev opcionais em modo sombra. O monitor só inicia após ação no painel; Jev permanece desligado até ativação explícita.
-- **Sem execução de ordens:** esta etapa não conecta carteira, não assina nem envia transações e não calcula P&L. BUY/SELL na fita identifica o lado agressor informado pela Kuru, não ordens do PaperLab. A DEMO antiga não usa dados da Kuru.
+- **Sem execução de ordens:** esta etapa não conecta carteira, não assina nem envia transações e não calcula P&L. BUY/SELL na fita identifica o lado agressor informado pela Kuru, não ordens do PaperLab. BUY/SELL/HOLD do Jev é somente uma postura observacional de sombra. A DEMO antiga não usa dados da Kuru.
 - **Integração externa ainda precisa ser configurada na VPS:** não foi fornecido endereço de mercado Kuru nem chave OpenRouter. As chamadas Jev podem ter custo e respeitam os limites de orçamento configurados.
 - REPLAY, pipeline PAPER ponta a ponta, reconciliação contínua de eventos/fills e avaliação por dados prospectivos permanecem fora do fluxo funcional atual. Ver [limitações](docs/limitations.md).
 

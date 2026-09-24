@@ -145,11 +145,12 @@ class OpenRouterClient:
         latency = int((time.monotonic() - started) * 1000)
         try:
             answers = response["answers"]
-            parsed = {
-                "relevance": parse_choice(answers["relevance"], {"relevant", "not_relevant"}),
-                "risk": parse_choice(answers["risk"], {"risk_event", "no_risk_event"}),
-                "sufficiency": parse_choice(answers["sufficiency"], {"sufficient", "insufficient_or_ambiguous"}),
-            }
+            parsed = {}
+            for name, question in questions.items():
+                criteria = question.get("criteria")
+                if not isinstance(criteria, dict) or not criteria:
+                    raise ValueError("Choice question has no criteria")
+                parsed[name] = parse_choice(answers[name], set(criteria))
         except (KeyError, TypeError, ValueError):
             raise ModelIntegrationError("Jev retornou campos ausentes ou incompatíveis; o resultado será ABSTAIN.") from None
         usage = response.get("usage") or {}

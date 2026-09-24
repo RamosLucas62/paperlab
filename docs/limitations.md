@@ -11,7 +11,7 @@ Esta entrega contém uma DEMO funcional e um terminal observacional conectado a 
 5. REPLAY usando apenas respostas/snapshots gravados e livro próprio com hipóteses de execução explícitas.
 6. Métricas comparativas PAPER, custo real atribuível a IA/infraestrutura, performance no intervalo comum e estado de degradação no dashboard.
 7. Testes autenticados opt-in para as integrações externas e testes de integração PostgreSQL multi-worker. Nenhum deles foi executado.
-8. Simulador de ordens/paper no mercado Monad/Kuru, cálculo de P&L, taxas/slippage, posição virtual ou recomendação BUY/SELL. A tela do terminal não simula execução.
+8. Simulador de ordens/paper no mercado Monad/Kuru, cálculo de P&L, taxas/slippage e posição virtual. BUY/SELL/HOLD do Jev é um rótulo observacional; não representa ordem nem recomendação. A tela do terminal não simula execução.
 
 ## Riscos de interpretação
 

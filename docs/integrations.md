@@ -36,7 +36,7 @@ Referências oficiais conferidas:
 - Cliente generativo: `POST https://openrouter.ai/api/v1/chat/completions`, resposta `json_schema` estrita, provedor precisa aceitar parâmetros obrigatórios, fallback automático desabilitado. O validador consulta a ficha de endpoints do ID de modelo e exige anúncio de `structured_outputs`.
 - O resumo recebe apenas os documentos fornecidos, limita fatos/alertas/incertezas e recusa IDs de fonte que não estejam no snapshot. O prompt trata documentos como dados não confiáveis e não habilita ferramentas.
 - JEV: `POST https://openrouter.ai/api/alpha/decisions`, modelo versionado (`typesafe/jev-1.13` por padrão); não substitui automaticamente por outro modelo. O corpo envia o objeto `state` e perguntas tipadas. Choice, Noul e Score têm parsers para os campos documentados, com confidence opcional.
-- No Terminal JEV, o modelo recebe somente amostras de preço/spread da Kuru e classifica relevância, risco aparente e suficiência dos dados. É uma observação; o resultado não aciona compra/venda. A chamada exige ativação no terminal, tem intervalo mínimo e reserva o teto por chamada antes de consultar. Se o provedor não reportar custo, a reserva permanece como custo desconhecido.
+- No Terminal JEV, o modelo recebe somente amostras de preço/spread da Kuru e classifica uma postura de sombra (`BUY`/`SELL`/`HOLD`), relevância, risco aparente e suficiência dos dados. O rótulo é observacional; não é recomendação e não aciona ordens. A chamada exige ativação no terminal, tem intervalo mínimo e reserva o teto por chamada antes de consultar. Se o provedor não reportar custo, a reserva permanece como custo desconhecido.
 
 ### Evidência de validação
 
@@ -57,8 +57,8 @@ Referências oficiais conferidas:
 ## Monad e Kuru
 
 - O terminal usa `eth_chainId` e `eth_blockNumber` por JSON-RPC e exige Monad Testnet (chain ID `10143`). A configuração recusa outros IDs e a verificação do RPC acontece ao iniciar o monitor.
-- O serviço separado `bot` assina `frontendOrderbook` no WebSocket Kuru (`KURU_WS_URL`) para o contrato configurado em `KURU_MARKET_ADDRESS`. Configure um endereço MON/USDC da Monad Testnet; a aplicação não escolhe nem inventa um contrato.
+- O serviço separado `bot` assina `frontendOrderbook` no WebSocket Kuru (`KURU_WS_URL`) para o contrato configurado em `KURU_MARKET_ADDRESS`. Configure um endereço MON/USDC da Monad Testnet; a aplicação não escolhe nem inventa um contrato. Antes da conexão, `eth_getCode` confirma que o endereço tem bytecode nessa mesma testnet.
 - O botão **Iniciar monitor** abre a conexão. Ao parar, o processo fecha o feed e desativa Jev. O serviço fica ocioso depois de iniciar o container. O terminal mantém no máximo 30 dias de amostras/eventos/observações.
-- BUY/SELL no histórico representa apenas o lado agressor de eventos `Trade` publicados pelo feed. Preços de negócio podem aparecer sem tamanho normalizado, porque a escala de tamanho da Kuru depende do mercado; a aplicação não infere essa escala.
+- BUY/SELL no histórico representa apenas o lado agressor de eventos `Trade` publicados pelo feed. Hashes válidos abrem o explorador Monad Testnet. Preços de negócio podem aparecer sem tamanho normalizado, porque a escala de tamanho da Kuru depende do mercado; a aplicação não infere essa escala.
 
 Referências oficiais: [Monad Developer Portal](https://developers.monad.xyz/) (testnet chain ID e RPC), [Monad JSON-RPC](https://docs.monad.xyz/reference/json-rpc/api), [Kuru Labs Python SDK](https://github.com/Kuru-Labs/kuru-sdk-py). O endpoint Kuru de testnet está listado no [SDK Python legado oficial](https://github.com/Kuru-Labs/kuru-sdk-py-old); sua disponibilidade atual não foi testada nesta sessão. O endereço de mercado segue configurável e precisa ser obtido/validado antes de iniciar o feed.

@@ -1,5 +1,6 @@
 from decimal import Decimal
 from functools import lru_cache
+from urllib.parse import urlsplit
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -56,6 +57,23 @@ class Settings(BaseSettings):
         if value != 10143:
             raise ValueError("O Terminal JEV está limitado à Monad Testnet (chain ID 10143).")
         return value
+
+    @field_validator("kuru_ws_url")
+    @classmethod
+    def require_kuru_testnet_feed(cls, value: str) -> str:
+        parsed = urlsplit(value.strip())
+        if (
+            parsed.scheme != "wss"
+            or parsed.hostname != "ws.testnet.kuru.io"
+            or parsed.port is not None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("KURU_WS_URL deve apontar ao feed WSS da Kuru Testnet (ws.testnet.kuru.io).")
+        return value.strip().rstrip("/")
 
 
 @lru_cache

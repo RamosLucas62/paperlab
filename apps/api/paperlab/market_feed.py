@@ -129,6 +129,15 @@ def decode_orderbook_message(message: dict[str, Any]) -> BookUpdate:
 
 def terminal_jev_questions(symbol: str) -> dict:
     return {
+        "stance": {
+            "type": "choice",
+            "instructions": f"For this read-only observation of {symbol}, classify the current order-book state as BUY, SELL, or HOLD. This is a non-executable shadow label, not a prediction or recommendation.",
+            "criteria": {
+                "buy": "The supplied snapshot supports a buy-side shadow label.",
+                "sell": "The supplied snapshot supports a sell-side shadow label.",
+                "hold": "The snapshot is mixed, neutral, or insufficient for a directional label.",
+            },
+        },
         "relevance": {
             "type": "choice",
             "instructions": f"Does this read-only {symbol} order-book snapshot contain a usable market observation?",

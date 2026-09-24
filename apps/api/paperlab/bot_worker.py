@@ -78,6 +78,18 @@ async def monad_block_number() -> tuple[int, int]:
         return chain_id, int(block["result"], 16)
 
 
+async def assert_market_contract_exists() -> None:
+    async with httpx.AsyncClient(timeout=8, follow_redirects=False, trust_env=False) as client:
+        response = await client.post(settings.monad_rpc_url, json={
+            "jsonrpc": "2.0", "id": 3, "method": "eth_getCode",
+            "params": [settings.kuru_market_address, "latest"],
+        })
+        response.raise_for_status()
+        code = response.json().get("result")
+    if not isinstance(code, str) or code.lower() in {"0x", "0x0", "0x00"}:
+        raise RuntimeError("KURU_MARKET_ADDRESS não tem contrato na Monad Testnet configurada.")
+
+
 def _persist_message(message: dict, block_number: int | None, prior_bid: Decimal | None, prior_ask: Decimal | None) -> tuple[MarketSample | None, bool, Decimal | None, Decimal | None]:
     parsed = decode_orderbook_message(message)
     current_bid = parsed.best_bid if parsed.bid_updated else prior_bid
@@ -163,7 +175,7 @@ async def _classify_with_jev(sample: MarketSample):
         cost_status = "reported" if cost is not None else "unknown"
         status = "ready"
         latency_ms = result.latency_ms
-        error_message = "Classificação observacional; não é sinal de compra/venda nem envia ordens."
+        error_message = "Postura BUY/SELL/HOLD somente observacional; não é ordem nem recomendação."
     except (ModelIntegrationError, ValueError) as exc:
         error_message = str(exc)
     except Exception:
@@ -191,12 +203,12 @@ async def _run_feed_session():
     if not settings.kuru_ws_url.startswith("wss://"):
         raise RuntimeError("KURU_WS_URL deve usar WSS seguro.")
     _, block_number = await monad_block_number()
+    await assert_market_contract_exists()
     _set_status("starting", block_number=block_number)
     subscription = {"type": "subscribe", "channel": "frontendOrderbook", "market": settings.kuru_market_address.lower()}
     last_rpc = time.monotonic()
     async with connect(settings.kuru_ws_url, open_timeout=12, close_timeout=5, ping_interval=20, ping_timeout=20, max_size=10 * 1024 * 1024) as socket:
         await socket.send(json.dumps(subscription))
-        _set_status("connected", block_number=block_number)
         last_bid = None
         last_ask = None
         while True:
