@@ -25,8 +25,9 @@ from paperlab.database import Base, SessionLocal, engine, get_db
 from paperlab.demo import create_demo_experiment, ensure_default_experiment, run_demo_cycle, set_demo_status
 from paperlab.domain import ZERO
 from paperlab.market_feed import market_address_is_valid
-from paperlab.models import AdminUser, Bar, Decision, Experiment, Fill, IntegrationEvent, JevObservation, MarketEvent, MarketSample, ModelCall, NewsVersion, OrderIntent, PortfolioSnapshot, Snapshot, TerminalControl
+from paperlab.models import AdminUser, Bar, Decision, Experiment, Fill, IntegrationEvent, ModelCall, NewsVersion, OrderIntent, PortfolioSnapshot, Snapshot, TerminalControl
 from paperlab.openrouter import ModelIntegrationError, OpenRouterClient
+from paperlab.terminal_state import ensure_terminal_control, load_terminal_history
 
 
 settings = get_settings()
@@ -178,13 +179,7 @@ def _latest_integration_states(db: Session) -> dict:
 
 
 def _terminal_control(db: Session) -> TerminalControl:
-    control = db.get(TerminalControl, 1)
-    if control is None:
-        control = TerminalControl(id=1, monitor_enabled=False, jev_enabled=False, status="stopped")
-        db.add(control)
-        db.commit()
-        db.refresh(control)
-    return control
+    return ensure_terminal_control(db, settings.monad_chain_id)
 
 
 @app.on_event("startup")
@@ -211,9 +206,7 @@ def health():
 @app.get("/api/terminal")
 def market_terminal(db: Session = Depends(get_db), _user: str = Depends(require_user)):
     control = _terminal_control(db)
-    samples = db.scalars(select(MarketSample).order_by(MarketSample.observed_at.desc()).limit(300)).all()
-    events = db.scalars(select(MarketEvent).order_by(MarketEvent.occurred_at.desc(), MarketEvent.id.desc()).limit(60)).all()
-    observations = db.scalars(select(JevObservation).order_by(JevObservation.observed_at.desc(), JevObservation.id.desc()).limit(30)).all()
+    samples, events, observations = load_terminal_history(db, settings.monad_chain_id)
     latest = samples[0] if samples else None
     return {
         "configuration": {
@@ -229,6 +222,7 @@ def market_terminal(db: Session = Depends(get_db), _user: str = Depends(require_
             "jev_interval_seconds": max(30, settings.terminal_jev_interval_seconds),
         },
         "control": {
+            "network_chain_id": control.network_chain_id,
             "monitor_enabled": control.monitor_enabled,
             "jev_enabled": control.jev_enabled,
             "status": control.status,

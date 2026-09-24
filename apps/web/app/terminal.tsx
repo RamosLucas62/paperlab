@@ -100,12 +100,14 @@ export default function MarketTerminal({ csrf, onMessage }: { csrf: string; onMe
   const current = data?.market;
   const lastJev = data?.jev_observations[0];
   const stance = lastJev?.status === "ready" ? lastJev.result?.stance : undefined;
+  const chainId = data?.configuration.chain_id;
+  const network = networkLabel(chainId);
   return <section className="terminal-view" aria-label="Terminal JEV">
-    <div className="terminal-safety-banner"><span className="terminal-live-dot" /><div><strong>OBSERVAÇÃO · SOMENTE LEITURA</strong><span>Feed Kuru e altura da Monad Testnet. Jev mostra postura de sombra; ordens e assinatura de transação estão desativadas.</span></div><span className="terminal-mode-chip">SEM EXECUÇÃO</span></div>
+    <div className="terminal-safety-banner"><span className="terminal-live-dot" /><div><strong>OBSERVAÇÃO · SOMENTE LEITURA</strong><span>Feed Kuru e altura da {network}. Jev mostra postura de sombra; ordens e assinatura de transação estão desativadas.</span></div><span className="terminal-mode-chip">SEM EXECUÇÃO</span></div>
     {error && <div className="terminal-error" role="alert">{error}</div>}
 
     <div className="terminal-heading">
-      <div><div className="terminal-kicker">PAPERLAB <span>·</span> MONAD TESTNET <span>·</span> {data?.configuration.symbol ?? "MON/USDC"}</div><h2>Terminal JEV</h2><p>Acompanhe o livro de ofertas e as classificações de mercado em um ambiente de sombra.</p></div>
+      <div><div className="terminal-kicker">PAPERLAB <span>·</span> {network.toUpperCase()} <span>·</span> {data?.configuration.symbol ?? "MON/USDC"}</div><h2>Terminal JEV</h2><p>Acompanhe o livro de ofertas e as classificações de mercado em um ambiente de sombra.</p></div>
       <div className="terminal-actions">
         {data?.control.monitor_enabled ? <button className="terminal-button secondary" onClick={() => control("stop_monitor")} disabled={busy}>■ Parar monitor</button> : <button className="terminal-button primary" onClick={() => control("start_monitor")} disabled={busy || !data?.configuration.market_configured}>▶ Iniciar monitor</button>}
         {data?.control.jev_enabled ? <button className="terminal-button secondary" onClick={() => control("disable_jev")} disabled={busy}>Desativar Jev</button> : <button className="terminal-button outline" onClick={() => control("enable_jev")} disabled={busy || !data?.configuration.jev_configured || !data?.control.monitor_enabled}>Ativar Jev</button>}
@@ -114,13 +116,13 @@ export default function MarketTerminal({ csrf, onMessage }: { csrf: string; onMe
 
     <div className="terminal-status-line"><span className={`terminal-status status-${data?.control.status ?? "stopped"}`}><i />{statusLabel(data?.control.status ?? "stopped")}</span><span className="terminal-status-separator" /><span>Último bloco <strong>{data?.control.last_block_number?.toLocaleString("en-US") ?? "—"}</strong></span><span className="terminal-status-separator" /><span>Atualizado <strong>{time(data?.control.last_sample_at)}</strong></span><span className="terminal-status-spacer" /><span className="terminal-market-hint">Mercado {data?.configuration.market_address_hint ?? "não configurado"}</span></div>
 
-    {!data?.configuration.market_configured && <div className="terminal-setup-note"><strong>Falta informar o mercado de teste da Kuru.</strong><span>No EasyPanel, adicione <code>KURU_MARKET_ADDRESS</code> com o endereço de um mercado Kuru na Monad Testnet (chain ID 10143). Não use endereço da rede principal. Depois salve e reimplante os serviços <code>api</code> e <code>bot</code>.</span></div>}
+    {!data?.configuration.market_configured && <div className="terminal-setup-note"><strong>Falta informar o mercado Kuru.</strong><span>Adicione <code>KURU_MARKET_ADDRESS</code> no EasyPanel. Para observação somente leitura na Monad Mainnet, o par MON/USDC verificado é <code>0x065c9d28e428a0db40191a54d33d5b7c71a9c394</code>. Na Testnet, use somente o contrato implantado nessa rede; os endereços não são intercambiáveis. Depois salve e reimplante <code>api</code> e <code>bot</code>.</span></div>}
     {data?.control.last_error && <div className="terminal-error" role="status">{data.control.last_error}</div>}
 
     <div className="terminal-stats-grid">
       <article className="terminal-stat-card"><span>PREÇO MÉDIO · {current?.symbol ?? data?.configuration.symbol ?? "MON/USDC"}</span><strong>{price(current?.mid_price)}</strong><small>bid {price(current?.best_bid)} <b>·</b> ask {price(current?.best_ask)}</small></article>
       <article className="terminal-stat-card"><span>SPREAD DO LIVRO</span><strong>{current ? `${Number(current.spread_bps).toFixed(2)} bps` : "—"}</strong><small>calculado a partir do melhor bid e ask</small></article>
-      <article className="terminal-stat-card"><span>REDE · BLOCO</span><strong>{data?.configuration.chain_id === 10143 ? "Monad Testnet" : `Chain ${data?.configuration.chain_id}`}</strong><small>{data?.control.last_block_number?.toLocaleString("en-US") ?? "aguardando RPC"}</small></article>
+      <article className="terminal-stat-card"><span>REDE · BLOCO</span><strong>{network}</strong><small>{data?.control.last_block_number?.toLocaleString("en-US") ?? "aguardando RPC"}</small></article>
       <article className="terminal-stat-card"><span>LEITURA JEV · SOMBRA</span><strong>{stance ? stanceLabel(stance.choice) : "—"}</strong><small>{stance?.confidence ? `${percent(stance.confidence)} de confiança reportada` : data?.control.jev_enabled ? "aguardando próxima leitura" : "Jev desativado"}</small></article>
     </div>
 
@@ -135,7 +137,7 @@ export default function MarketTerminal({ csrf, onMessage }: { csrf: string; onMe
       </article>
     </div>
 
-    <article className="terminal-panel terminal-tape-panel"><div className="terminal-panel-heading"><div><span className="terminal-kicker">EVENTOS DO FEED KURU</span><h3>Negociações recentes</h3></div><span className="terminal-tape-count">{data?.events.length ?? 0} eventos</span></div><div className="terminal-tape-scroll"><table className="terminal-tape"><thead><tr><th>HORÁRIO · SP</th><th>LADO AGRESSOR</th><th>PREÇO</th><th>IDENTIFICADOR</th></tr></thead><tbody>{data?.events.map((item, index) => <tr key={`${item.at}-${index}`}><td>{time(item.at)}</td><td><span className={`terminal-side ${item.side === "BUY" ? "buy" : "sell"}`}>{item.side}</span></td><td>{price(item.price)}</td><td className="terminal-hash">{txHash(item.tx_hash) ? <a href={`https://testnet.monadscan.com/tx/${txHash(item.tx_hash)}`} target="_blank" rel="noreferrer">{`${item.tx_hash!.slice(0, 9)}…${item.tx_hash!.slice(-5)}`}</a> : "—"}</td></tr>)}</tbody></table>{!data?.events.length && <div className="terminal-empty-note">{loading ? "Carregando eventos…" : "A fita será preenchida quando o feed Kuru publicar negociações."}</div>}</div></article>
+    <article className="terminal-panel terminal-tape-panel"><div className="terminal-panel-heading"><div><span className="terminal-kicker">EVENTOS DO FEED KURU</span><h3>Negociações recentes</h3></div><span className="terminal-tape-count">{data?.events.length ?? 0} eventos</span></div><div className="terminal-tape-scroll"><table className="terminal-tape"><thead><tr><th>HORÁRIO · SP</th><th>LADO AGRESSOR</th><th>PREÇO</th><th>IDENTIFICADOR</th></tr></thead><tbody>{data?.events.map((item, index) => <tr key={`${item.at}-${index}`}><td>{time(item.at)}</td><td><span className={`terminal-side ${item.side === "BUY" ? "buy" : "sell"}`}>{item.side}</span></td><td>{price(item.price)}</td><td className="terminal-hash">{txHash(item.tx_hash) ? <a href={txExplorerUrl(item.tx_hash!, chainId)} target="_blank" rel="noreferrer">{`${item.tx_hash!.slice(0, 9)}…${item.tx_hash!.slice(-5)}`}</a> : "—"}</td></tr>)}</tbody></table>{!data?.events.length && <div className="terminal-empty-note">{loading ? "Carregando eventos…" : "A fita será preenchida quando o feed Kuru publicar negociações."}</div>}</div></article>
 
     <div className="terminal-bottom-note"><span>ⓘ</span><p>BUY/SELL na fita é o lado agressor reportado pelo feed. BUY/SELL/HOLD do Jev é um rótulo observacional em sombra; não é ordem nem recomendação. O PaperLab não assina transações, não mantém posição e não calcula P&L nesta tela.</p></div>
   </section>;
@@ -144,5 +146,7 @@ export default function MarketTerminal({ csrf, onMessage }: { csrf: string; onMe
 function percent(value?: string) { return value == null ? "—" : `${(Number(value) * 100).toFixed(0)}%`; }
 function stanceLabel(choice?: string) { return ({ buy: "BUY", sell: "SELL", hold: "HOLD" } as Record<string, string>)[choice ?? ""] ?? choice?.toUpperCase() ?? "—"; }
 function txHash(value?: string | null) { return value && /^0x[a-fA-F0-9]{64}$/.test(value) ? value : null; }
+function networkLabel(chainId?: number) { return chainId === 10143 ? "Monad Testnet" : chainId === 143 ? "Monad Mainnet · somente leitura" : chainId ? `Chain ${chainId}` : "aguardando RPC"; }
+function txExplorerUrl(hash: string, chainId?: number) { return `${chainId === 10143 ? "https://testnet.monadscan.com" : "https://monadscan.com"}/tx/${hash}`; }
 function jevLabel(key: string) { return ({ stance: "Postura", relevance: "Relevância", risk: "Risco", sufficiency: "Dados" } as Record<string, string>)[key] ?? key; }
 function choiceLabel(choice?: string) { return ({ buy: "BUY", sell: "SELL", hold: "HOLD", relevant: "relevante", not_relevant: "não relevante", risk_event: "risco", no_risk_event: "sem risco sinalizado", sufficient: "suficientes", insufficient_or_ambiguous: "insuficientes" } as Record<string, string>)[choice ?? ""] ?? choice ?? "—"; }

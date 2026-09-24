@@ -21,6 +21,7 @@ from paperlab.demo import ensure_default_experiment
 from paperlab.market_feed import decode_orderbook_message, market_address_is_valid, terminal_jev_questions
 from paperlab.models import JevObservation, MarketEvent, MarketSample, TerminalControl
 from paperlab.openrouter import ModelIntegrationError, OpenRouterClient
+from paperlab.terminal_state import ensure_terminal_control
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -33,13 +34,7 @@ def _now() -> datetime:
 
 
 def ensure_control(db):
-    control = db.get(TerminalControl, 1)
-    if control is None:
-        control = TerminalControl(id=1, monitor_enabled=False, jev_enabled=False, status="stopped", updated_at=_now())
-        db.add(control)
-        db.commit()
-        db.refresh(control)
-    return control
+    return ensure_terminal_control(db, settings.monad_chain_id)
 
 
 def _set_status(status: str, error: str | None = None, *, block_number: int | None = None):
@@ -71,7 +66,8 @@ async def monad_block_number() -> tuple[int, int]:
         chain = chain_response.json()
         chain_id = int(chain["result"], 16)
         if chain_id != settings.monad_chain_id:
-            raise RuntimeError(f"RPC configurado na rede {chain_id}; esperado Monad {settings.monad_chain_id}.")
+            expected = "Monad Mainnet" if settings.monad_chain_id == 143 else "Monad Testnet"
+            raise RuntimeError(f"RPC configurado na rede {chain_id}; esperado {expected} (chain ID {settings.monad_chain_id}).")
         block_response = await client.post(settings.monad_rpc_url, json={"jsonrpc": "2.0", "id": 2, "method": "eth_blockNumber", "params": []})
         block_response.raise_for_status()
         block = block_response.json()
@@ -87,7 +83,8 @@ async def assert_market_contract_exists() -> None:
         response.raise_for_status()
         code = response.json().get("result")
     if not isinstance(code, str) or code.lower() in {"0x", "0x0", "0x00"}:
-        raise RuntimeError("KURU_MARKET_ADDRESS não tem contrato na Monad Testnet configurada.")
+        network = "Monad Mainnet" if settings.monad_chain_id == 143 else "Monad Testnet"
+        raise RuntimeError(f"KURU_MARKET_ADDRESS não tem contrato na {network} configurada.")
 
 
 def _persist_message(message: dict, block_number: int | None, prior_bid: Decimal | None, prior_ask: Decimal | None) -> tuple[MarketSample | None, bool, Decimal | None, Decimal | None]:
@@ -101,16 +98,18 @@ def _persist_message(message: dict, block_number: int | None, prior_bid: Decimal
         control = ensure_control(db)
         for trade in parsed.trades:
             key = f"{settings.kuru_market_address.lower()}:{trade.event_key}"[:200]
+            if settings.monad_chain_id != 10143:
+                key = f"{settings.monad_chain_id}:{key}"[:200]
             exists = db.scalar(select(MarketEvent.id).where(MarketEvent.event_key == key))
             if exists is None:
-                db.add(MarketEvent(event_key=key, occurred_at=trade.occurred_at, side=trade.side,
+                db.add(MarketEvent(chain_id=settings.monad_chain_id, event_key=key, occurred_at=trade.occurred_at, side=trade.side,
                     price=trade.price, size=trade.size, tx_hash=trade.tx_hash))
         if current_bid and current_ask and current_bid <= current_ask:
             last_at = control.last_sample_at
             if last_at is None or (now - (last_at if last_at.tzinfo else last_at.replace(tzinfo=timezone.utc))).total_seconds() >= max(1, settings.terminal_sample_interval_seconds):
                 mid = (current_bid + current_ask) / Decimal(2)
                 spread = (current_ask - current_bid) / mid * Decimal(10000) if mid else Decimal(0)
-                sample = MarketSample(observed_at=now, symbol=settings.kuru_symbol, best_bid=current_bid,
+                sample = MarketSample(chain_id=settings.monad_chain_id, observed_at=now, symbol=settings.kuru_symbol, best_bid=current_bid,
                     best_ask=current_ask, mid_price=mid, spread_bps=spread, block_number=block_number)
                 db.add(sample)
                 db.flush()

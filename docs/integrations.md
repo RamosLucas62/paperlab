@@ -19,7 +19,7 @@ Documentação oficial consultada em 24/09/2026. Os adaptadores têm testes offl
 
 ### Evidência de validação
 
-**Integração externa não executada.** Não havia credenciais autorizadas disponíveis nesta entrega. Nenhuma conta foi acessada e nenhuma ordem paper foi enviada. Cobertura mock inclui host não paper, redirect, timeout/consulta por ID, deduplicação de candles, corte de barra aberta, mapeamento/ausência de notícias, status desconhecido e preflight de IDs/saldos.
+**Alpaca externa não executada.** Não havia credenciais autorizadas disponíveis nesta entrega. Nenhuma conta foi acessada e nenhuma ordem paper foi enviada. Cobertura mock inclui host não paper, redirect, timeout/consulta por ID, deduplicação de candles, corte de barra aberta, mapeamento/ausência de notícias, status desconhecido e preflight de IDs/saldos.
 
 Referências oficiais conferidas:
 
@@ -40,7 +40,7 @@ Referências oficiais conferidas:
 
 ### Evidência de validação
 
-**Integração externa não executada nesta sessão.** Testes mocks cobrem formato de resumo, endpoint alpha do JEV, estado tipado, confidence opcional e erros. Nenhuma chamada faturável foi feita nesta sessão.
+**OpenRouter/JEV externo não executado nesta sessão.** Testes mocks cobrem formato de resumo, endpoint alpha do JEV, estado tipado, confidence opcional e erros. Nenhuma chamada faturável foi feita nesta sessão.
 
 Referências oficiais conferidas:
 
@@ -56,9 +56,11 @@ Referências oficiais conferidas:
 
 ## Monad e Kuru
 
-- O terminal usa `eth_chainId` e `eth_blockNumber` por JSON-RPC e exige Monad Testnet (chain ID `10143`). A configuração recusa outros IDs e a verificação do RPC acontece ao iniciar o monitor.
-- O serviço separado `bot` assina `frontendOrderbook` no WebSocket Kuru (`KURU_WS_URL`) para o contrato configurado em `KURU_MARKET_ADDRESS`. Configure um endereço MON/USDC da Monad Testnet; a aplicação não escolhe nem inventa um contrato. Antes da conexão, `eth_getCode` confirma que o endereço tem bytecode nessa mesma testnet.
+- O terminal usa `eth_chainId` e `eth_blockNumber` por JSON-RPC. Aceita Monad Testnet (10143, padrão) ou Monad Mainnet (143, observação somente leitura), e confere o RPC ao iniciar o monitor.
+- O serviço separado `bot` assina `frontendOrderbook` no WebSocket Kuru (`KURU_WS_URL`) para `KURU_MARKET_ADDRESS`. O host precisa corresponder ao chain ID. Antes da conexão, `eth_getCode` confirma bytecode do mercado na mesma rede. O serviço não recebe carteira nem chave privada, não assina e não envia transações.
 - O botão **Iniciar monitor** abre a conexão. Ao parar, o processo fecha o feed e desativa Jev. O serviço fica ocioso depois de iniciar o container. O terminal mantém no máximo 30 dias de amostras/eventos/observações.
-- BUY/SELL no histórico representa apenas o lado agressor de eventos `Trade` publicados pelo feed. Hashes válidos abrem o explorador Monad Testnet. Preços de negócio podem aparecer sem tamanho normalizado, porque a escala de tamanho da Kuru depende do mercado; a aplicação não infere essa escala.
+- BUY/SELL no histórico representa apenas o lado agressor de eventos `Trade` publicados pelo feed. Hashes válidos abrem o explorador da rede selecionada. Preços de negócio podem aparecer sem tamanho normalizado, porque a escala de tamanho da Kuru depende do mercado; a aplicação não infere essa escala.
 
-Referências oficiais: [Monad Developer Portal](https://developers.monad.xyz/) (testnet chain ID e RPC), [Monad JSON-RPC](https://docs.monad.xyz/reference/json-rpc/api), [Kuru Labs Python SDK](https://github.com/Kuru-Labs/kuru-sdk-py). O endpoint Kuru de testnet está listado no [SDK Python legado oficial](https://github.com/Kuru-Labs/kuru-sdk-py-old); sua disponibilidade atual não foi testada nesta sessão. O endereço de mercado segue configurável e precisa ser obtido/validado antes de iniciar o feed.
+**Validação externa somente leitura em 24/09/2026:** RPC Monad Mainnet respondeu com chain ID `0x8f` (143), `eth_getCode` encontrou 141 bytes no contrato `0x065c9d28e428a0db40191a54d33d5b7c71a9c394`, e a assinatura `frontendOrderbook` retornou bid `0.024397` e ask `0.024406`. São valores daquela amostra, não preços fixos. `ws.testnet.kuru.io` e o RPC público de testnet não resolveram por DNS neste ambiente; não há endereço Kuru MON/USDC de testnet validado aqui. Nenhuma transação foi assinada ou transmitida. OpenRouter não foi chamado por exigir a chave do proprietário.
+
+Referências oficiais: [Monad Developer Hub](https://monad.xyz/developers) (RPCs, chain IDs e explorers), [Monad JSON-RPC](https://docs.monad.xyz/reference/json-rpc/api), [Kuru Labs Python SDK](https://github.com/Kuru-Labs/kuru-sdk-py) (feed read-only atual), [API de mercados Kuru](https://api.kuru.io/api/v1/markets). O endpoint `ws.testnet.kuru.io` aparece no [SDK Python legado oficial](https://github.com/Kuru-Labs/kuru-sdk-py-old), mas sua disponibilidade não foi confirmada.

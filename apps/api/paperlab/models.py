@@ -224,6 +224,7 @@ class BudgetWindow(Base):
 class TerminalControl(Base):
     __tablename__ = "terminal_control"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    network_chain_id: Mapped[int] = mapped_column(Integer, default=10143, server_default="10143", nullable=False)
     monitor_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     jev_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="stopped", nullable=False)
@@ -237,6 +238,7 @@ class TerminalControl(Base):
 class MarketSample(Base):
     __tablename__ = "market_samples"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chain_id: Mapped[int] = mapped_column(Integer, default=10143, server_default="10143", nullable=False, index=True)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
     symbol: Mapped[str] = mapped_column(String(24), nullable=False)
     best_bid: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
@@ -249,6 +251,7 @@ class MarketSample(Base):
 class MarketEvent(Base):
     __tablename__ = "market_events"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chain_id: Mapped[int] = mapped_column(Integer, default=10143, server_default="10143", nullable=False, index=True)
     event_key: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     side: Mapped[str] = mapped_column(String(8), nullable=False)

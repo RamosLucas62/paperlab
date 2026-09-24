@@ -31,10 +31,10 @@ Cadastre no editor de ambiente do Compose:
 | `ADMIN_USERNAME` | Usuário administrativo escolhido pelo proprietário. |
 | `ADMIN_PASSWORD` | Senha exclusiva com ao menos 12 caracteres. |
 | `WORKER_INTERVAL_SECONDS` | Opcional; padrão 60. |
-| `MONAD_RPC_URL` | Opcional; padrão `https://rpc.testnet.monad.xyz`. Consulta somente chain ID e altura de bloco. |
-| `MONAD_CHAIN_ID` | Deve ser `10143` (Monad Testnet); a aplicação recusa outro chain ID. |
-| `KURU_WS_URL` | Opcional; deve ser o feed da testnet. Padrão `wss://ws.testnet.kuru.io`, listado no SDK oficial legado da Kuru. Outros hosts são recusados. |
-| `KURU_MARKET_ADDRESS` | Endereço de um mercado MON/USDC da Kuru implantado na Monad Testnet. Sem ele, o botão de monitor fica desabilitado. Não use endereço da mainnet. |
+| `MONAD_RPC_URL` | Opcional; vazio seleciona o RPC público conforme `MONAD_CHAIN_ID`. Consulta somente chain ID, bloco e bytecode do mercado. |
+| `MONAD_CHAIN_ID` | `10143` (Monad Testnet, padrão) ou `143` (Monad Mainnet em modo somente leitura). Outros IDs são recusados. |
+| `KURU_WS_URL` | Opcional; vazio seleciona `wss://ws.testnet.kuru.io` na testnet ou `wss://ws.kuru.io` na mainnet. O host deve corresponder ao chain ID. |
+| `KURU_MARKET_ADDRESS` | Endereço do mercado MON/USDC Kuru na rede selecionada. Na mainnet somente leitura, o endereço conferido é `0x065c9d28e428a0db40191a54d33d5b7c71a9c394`. Na testnet, use um contrato implantado nessa rede. Sem endereço, o monitor fica desabilitado. |
 | `KURU_SYMBOL` | Opcional; padrão `MON/USDC`, rótulo mostrado no painel. |
 | `TERMINAL_SAMPLE_INTERVAL_SECONDS` | Opcional; intervalo mínimo de gravação das amostras do gráfico; padrão 5 segundos. |
 | `OPENROUTER_API_KEY` | Opcional; necessário apenas para ativar Jev. A chave não deve ser enviada no chat ou navegador. |
@@ -52,12 +52,26 @@ Não cadastre credenciais Alpaca ou OpenRouter para servir a DEMO. Não inclua s
 4. Configure as quatro variáveis obrigatórias acima. Use senhas diferentes para admin, Postgres e assinatura de sessão.
 5. Faça Deploy e verifique a saúde de `postgres`, `api`, `worker`, `bot` e `web`. A primeira inicialização cria/atualiza o schema do banco privado da VPS antes de subir a API.
 6. Associe um hostname ao serviço `web` na porta interna `3000`, em HTTPS. Não publique a porta 8000 ou 5432.
-7. Confirme o login e o Terminal JEV. Para usar o feed, configure o endereço de um mercado Kuru **da Monad Testnet (chain ID 10143)** e reinicie os serviços `api` e `bot`; depois ative o monitor no painel. Ative Jev separadamente somente depois de cadastrar a chave e revisar os limites de custo. Nenhuma ordem ou transação é enviada.
+7. Confirme o login e o Terminal JEV. Para usar o feed, configure `KURU_MARKET_ADDRESS` na rede selecionada e reinicie `api` e `bot`; depois ative o monitor. Jev é uma ativação separada e só deve ser ligado após cadastrar a chave e revisar os limites de custo. Nenhuma ordem ou transação é enviada.
 8. Configure backup externo testável do volume Postgres. Um volume Docker sozinho não é backup.
 
 ## Atualizar a instalação existente
 
-Para a VPS PaperLab já configurada no EasyPanel, mantenha o serviço Compose atual ligado ao repositório e à branch `main`; sincronize e faça Deploy após o push. A migração `0002_market_terminal` é aplicada pela inicialização da API, preservando o volume Postgres. O serviço `bot` sobe parado, sem conexão externa, até o botão **Iniciar monitor** ser acionado. Cadastre `KURU_MARKET_ADDRESS` no Environment do Compose antes de iniciar o feed. A chave OpenRouter é opcional e só deve ser inserida se o Jev for ativado. Não é preciso recriar o domínio.
+Para a VPS PaperLab já configurada no EasyPanel, mantenha o serviço Compose atual ligado ao repositório e à branch `main`; sincronize e faça Deploy após o push. A migração `0003_terminal_network_scoping` é aplicada pela inicialização da API, preservando o volume Postgres e marcando o histórico existente como Testnet. O serviço `bot` sobe parado, sem conexão externa, até o botão **Iniciar monitor** ser acionado. Cadastre `KURU_MARKET_ADDRESS` no Environment do Compose antes de iniciar o feed. A chave OpenRouter é opcional e só deve ser inserida se o Jev for ativado. Não é preciso recriar o domínio. Ao mudar o chain ID, a aplicação pausa o monitor e separa os históricos por rede.
+
+### Observação de mercado atual
+
+A configuração padrão continua na Monad Testnet. Na verificação pública desta sessão, `ws.testnet.kuru.io` não resolveu via DNS, enquanto o feed de mainnet aceitou a assinatura do mercado MON/USDC e retornou bid/ask. Para exibir esse mercado sem enviar transações, use explicitamente estas variáveis no Environment do Compose:
+
+```env
+MONAD_CHAIN_ID=143
+MONAD_RPC_URL=https://rpc.monad.xyz
+KURU_WS_URL=wss://ws.kuru.io/
+KURU_MARKET_ADDRESS=0x065c9d28e428a0db40191a54d33d5b7c71a9c394
+KURU_SYMBOL=MON/USDC
+```
+
+Isso só lê dados públicos: o PaperLab não recebe carteira ou chave privada e o serviço não assina nem transmite ordens Kuru. Se preferir ficar na testnet, mantenha `MONAD_CHAIN_ID=10143` e use um endereço de mercado implantado nessa rede.
 
 ## GitHub público e licença
 

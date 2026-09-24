@@ -2,8 +2,22 @@ from decimal import Decimal
 from functools import lru_cache
 from urllib.parse import urlsplit
 
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+MONAD_NETWORKS = {
+    10143: {
+        "name": "Monad Testnet",
+        "rpc_url": "https://rpc.testnet.monad.xyz",
+        "kuru_ws_url": "wss://ws.testnet.kuru.io",
+    },
+    143: {
+        "name": "Monad Mainnet (somente leitura)",
+        "rpc_url": "https://rpc.monad.xyz",
+        "kuru_ws_url": "wss://ws.kuru.io",
+    },
+}
 
 
 class Settings(BaseSettings):
@@ -34,10 +48,10 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_llm_model: str = ""
     jev_model: str = "typesafe/jev-1.13"
-    # The JevTrader terminal is deliberately pinned to Monad testnet.
-    monad_rpc_url: str = "https://rpc.testnet.monad.xyz"
+    # Defaults are selected from chain_id. The terminal never signs transactions.
+    monad_rpc_url: str = ""
     monad_chain_id: int = 10143
-    kuru_ws_url: str = "wss://ws.testnet.kuru.io"
+    kuru_ws_url: str = ""
     kuru_market_address: str = ""
     kuru_symbol: str = "MON/USDC"
     terminal_sample_interval_seconds: int = 5
@@ -53,18 +67,20 @@ class Settings(BaseSettings):
 
     @field_validator("monad_chain_id")
     @classmethod
-    def require_monad_testnet(cls, value: int) -> int:
-        if value != 10143:
-            raise ValueError("O Terminal JEV está limitado à Monad Testnet (chain ID 10143).")
+    def require_supported_monad_network(cls, value: int) -> int:
+        if value not in MONAD_NETWORKS:
+            raise ValueError("O Terminal JEV só aceita Monad Testnet (10143) ou observação somente leitura na Monad Mainnet (143).")
         return value
 
     @field_validator("kuru_ws_url")
     @classmethod
-    def require_kuru_testnet_feed(cls, value: str) -> str:
+    def require_kuru_official_feed(cls, value: str) -> str:
+        if not value.strip():
+            return ""
         parsed = urlsplit(value.strip())
         if (
             parsed.scheme != "wss"
-            or parsed.hostname != "ws.testnet.kuru.io"
+            or parsed.hostname not in {"ws.testnet.kuru.io", "ws.kuru.io"}
             or parsed.port is not None
             or parsed.username is not None
             or parsed.password is not None
@@ -72,8 +88,23 @@ class Settings(BaseSettings):
             or parsed.query
             or parsed.fragment
         ):
-            raise ValueError("KURU_WS_URL deve apontar ao feed WSS da Kuru Testnet (ws.testnet.kuru.io).")
+            raise ValueError("KURU_WS_URL deve usar o feed WSS oficial da Kuru para testnet ou mainnet.")
         return value.strip().rstrip("/")
+
+    @model_validator(mode="after")
+    def select_and_validate_market_network(self):
+        network = MONAD_NETWORKS[self.monad_chain_id]
+        if not self.monad_rpc_url.strip():
+            self.monad_rpc_url = network["rpc_url"]
+        if not self.kuru_ws_url.strip():
+            self.kuru_ws_url = network["kuru_ws_url"]
+        expected_host = urlsplit(network["kuru_ws_url"]).hostname
+        configured_host = urlsplit(self.kuru_ws_url).hostname
+        if configured_host != expected_host:
+            raise ValueError(
+                f"KURU_WS_URL não corresponde à rede selecionada ({network['name']}; esperado {expected_host})."
+            )
+        return self
 
 
 @lru_cache
