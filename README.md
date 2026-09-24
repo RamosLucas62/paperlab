@@ -60,7 +60,7 @@ Abra http://127.0.0.1:3000. Para encerrar os serviços, use `docker compose down
 
 O Compose de produção para o painel está em `docker-compose.easypanel.yml`. Ele publica só o serviço web pelo proxy do EasyPanel; API e PostgreSQL permanecem na rede privada do Compose. A aplicação ainda exige login administrativo mesmo com repositório público.
 
-1. Use o repositório público existente `RamosLucas62/paperlab` e envie o conteúdo deste projeto. Não adicione `.env`, banco local, chaves, certificados, `.venv` ou `node_modules`. O `.gitignore` e `.dockerignore` filtram esses arquivos.
+1. Use o repositório público [RamosLucas62/paperlab](https://github.com/RamosLucas62/paperlab), já sincronizado com a branch `main`. Não adicione `.env`, banco local, chaves, certificados, `.venv` ou `node_modules`. O `.gitignore` e `.dockerignore` filtram esses arquivos.
 2. No EasyPanel, crie um serviço **Compose** com fonte **GitHub** (`owner/paperlab`), branch `main`, build path `/` e arquivo `docker-compose.easypanel.yml`. Repositórios públicos não precisam de token GitHub segundo o [guia de fontes do EasyPanel](https://easypanel.io/docs/services/app).
 3. Em Environment, configure `POSTGRES_PASSWORD` como segredo aleatório de 32 bytes hexadecimais, `SESSION_SECRET_KEY` como segredo aleatório com pelo menos 32 caracteres, `ADMIN_USERNAME` e uma `ADMIN_PASSWORD` exclusiva com pelo menos 12 caracteres. Senhas hexadecimais evitam caracteres que precisariam de escape na URL PostgreSQL. Não defina credenciais Alpaca/OpenRouter neste primeiro deploy DEMO.
 4. Faça Deploy. A API espera o Postgres saudável e aplica Alembic ao banco local da VPS antes de iniciar. O volume `paperlab-postgres` mantém os dados entre recriações; configure e teste backups no provedor/VPS antes de atualizações relevantes.
@@ -69,7 +69,7 @@ O Compose de produção para o painel está em `docker-compose.easypanel.yml`. E
 
 O Compose local `docker-compose.yml` continua usando ligações em `127.0.0.1`; use o arquivo EasyPanel acima na VPS. O guia completo e as verificações de produção estão em [docs/easypanel.md](docs/easypanel.md). O EasyPanel oferece domínio/HTTPS e deploy de Compose a partir de GitHub na própria interface; consulte a [documentação de Compose](https://easypanel.io/docs/services/compose) e [domínios](https://easypanel.io/docs/services/compose#domains) para os campos atuais.
 
-**Estado da publicação:** o repositório público existe em `RamosLucas62/paperlab`, e a branch `main` local está preparada, mas ainda não foi enviada. O `gh` instalado neste computador informa que a autenticação configurada para a conta está inválida; é necessário reautenticar antes do push. Nenhuma VPS, domínio ou serviço EasyPanel foi acessado nesta etapa.
+**Estado da publicação:** código publicado em `main` no [GitHub](https://github.com/RamosLucas62/paperlab). O commit `ca25b5b` corrigiu o lock de dependências para Python 3.12; o workflow [CI](https://github.com/RamosLucas62/paperlab/actions/runs/36002792228) concluiu com sucesso para Python e web. O deploy na VPS ainda não foi executado: falta conectar o projeto a um serviço EasyPanel e associar um domínio apontado para a VPS. Veja [docs/easypanel.md](docs/easypanel.md). Nenhum segredo deve ser enviado pelo chat ou commitado no repositório.
 
 ## Testes e checagens locais
 

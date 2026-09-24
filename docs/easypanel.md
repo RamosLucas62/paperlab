@@ -2,7 +2,7 @@
 
 ## Modelo de exposição
 
-O repositório de código será público; isso não torna o painel anônimo. O aplicativo mantém sua tela de login administrativo. Na VPS, o proxy do EasyPanel fornece o domínio público/HTTPS somente ao container `web`; o container `api` e o banco Postgres não recebem uma rota pública ou porta publicada. O frontend conversa com API pela rede privada do Compose.
+O repositório de código é público; isso não torna o painel anônimo. O aplicativo mantém sua tela de login administrativo. Na VPS, o proxy do EasyPanel fornece o domínio público/HTTPS somente ao container `web`; o container `api` e o banco Postgres não recebem uma rota pública ou porta publicada. O frontend conversa com API pela rede privada do Compose.
 
 EasyPanel documenta suporte a um Compose associado ao GitHub, domínio ligado a serviço+porta e deploy com Docker Compose. Neste projeto, o build path é a raiz por causa dos Dockerfiles, fixtures, policy e requirements compartilhados. Veja a [documentação de Compose](https://easypanel.io/docs/services/compose), [App/GitHub source](https://easypanel.io/docs/services/app) e [configuração de domínios](https://easypanel.io/docs/services/compose#domains).
 
@@ -35,8 +35,8 @@ Não cadastre credenciais Alpaca ou OpenRouter para servir a DEMO. Não inclua s
 
 ## Procedimento de deploy
 
-1. Use o repositório público existente `RamosLucas62/paperlab`.
-2. Envie os arquivos do projeto para a branch `main`. Inspecione os arquivos staged e confirme que `.env`, bancos SQLite, `.venv`, `node_modules` e builds locais não foram incluídos.
+1. Use o repositório público [RamosLucas62/paperlab](https://github.com/RamosLucas62/paperlab), cuja branch `main` contém o projeto. O commit `ca25b5b` também corrigiu o lock de dependências para Python 3.12.
+2. Ao atualizar o projeto, inspecione os arquivos staged e confirme que `.env`, bancos SQLite, `.venv`, `node_modules` e builds locais não foram incluídos.
 3. No EasyPanel: New Service → Compose → GitHub; informe `owner/paperlab`, branch `main`, Build Path `/`, arquivo `docker-compose.easypanel.yml`.
 4. Configure as quatro variáveis obrigatórias acima. Use senhas diferentes para admin, Postgres e assinatura de sessão.
 5. Faça Deploy e verifique a saúde de `postgres`, `api`, `worker` e `web`. A primeira inicialização cria/atualiza o schema do banco privado da VPS antes de subir a API.
@@ -44,8 +44,10 @@ Não cadastre credenciais Alpaca ou OpenRouter para servir a DEMO. Não inclua s
 7. Confirme o login e o banner sintético DEMO, exporte um ciclo e verifique os logs. O produto ainda não executa PAPER ou REPLAY.
 8. Configure backup externo testável do volume Postgres. Um volume Docker sozinho não é backup.
 
-Não configurei um nome de domínio porque o usuário ainda não informou qual domínio está apontado para a VPS. Nenhum host ou credencial EasyPanel foi fornecido, então não executei o deploy.
+## Estado do deploy
+
+O workflow do GitHub para o commit `ca25b5b` concluiu com sucesso nos jobs de Python e web: [ver execução](https://github.com/RamosLucas62/paperlab/actions/runs/36002792228). O deploy na VPS ainda não foi executado: não foi informado um domínio apontado para a VPS nem foi conectado um serviço EasyPanel nesta sessão. Para concluir, crie o serviço Compose seguindo o procedimento acima, cadastre os segredos diretamente no EasyPanel e associe o domínio da VPS ao serviço `web`. Não envie senhas ou chaves pelo chat.
 
 ## GitHub público e licença
 
-A listagem do código pode ser pública sem conceder uma licença permissiva. Não foi adicionada licença de código nesta etapa, pois isso define direitos de reutilização. GitHub ainda não recebeu o projeto: o token local de `gh` expirou/está inválido e precisa ser renovado pela autenticação do usuário. Depois da reautenticação, confirme o proprietário do repositório e a licença antes de publicar.
+A listagem do código está pública no GitHub. Não foi adicionada licença de código, pois isso define direitos de reutilização; a ausência de um arquivo de licença não concede uma licença permissiva.
