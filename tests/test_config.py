@@ -8,7 +8,7 @@ def test_terminal_defaults_to_monad_testnet():
     settings = Settings(_env_file=None)
     assert settings.monad_chain_id == 10143
     assert settings.monad_rpc_url == "https://testnet-rpc.monad.xyz"
-    assert settings.kuru_ws_url == "wss://ws.testnet.kuru.io"
+    assert settings.kuru_ws_url == ""
 
 
 def test_terminal_selects_monad_mainnet_read_only_defaults():
@@ -23,7 +23,13 @@ def test_terminal_rejects_an_unsupported_chain_id():
 
 
 def test_terminal_rejects_kuru_feed_from_the_other_network():
-    with pytest.raises(ValidationError, match="não corresponde à rede selecionada"):
+    with pytest.raises(ValidationError, match="não documenta um feed WSS ativo"):
         Settings(_env_file=None, monad_chain_id=10143, kuru_ws_url="wss://ws.kuru.io/")
     with pytest.raises(ValidationError, match="não corresponde à rede selecionada"):
         Settings(_env_file=None, monad_chain_id=143, kuru_ws_url="wss://ws.testnet.kuru.io/")
+
+
+def test_terminal_ignores_legacy_testnet_kuru_endpoint():
+    with pytest.warns(RuntimeWarning, match="feed legado da Kuru Testnet"):
+        settings = Settings(_env_file=None, monad_chain_id=10143, kuru_ws_url="wss://ws.testnet.kuru.io/")
+    assert settings.kuru_ws_url == ""

@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from paperlab.market_feed import decode_orderbook_message, market_address_is_valid, terminal_jev_questions
+from paperlab.market_feed import OrderBookState, decode_orderbook_message, market_address_is_valid, terminal_jev_questions
 
 
 def test_decode_kuru_book_levels_and_trade_without_guessing_raw_size():
@@ -15,6 +15,7 @@ def test_decode_kuru_book_levels_and_trade_without_guessing_raw_size():
     assert update.best_bid == Decimal("100")
     assert update.best_ask == Decimal("101")
     assert update.bid_updated and update.ask_updated
+    assert update.snapshot
     assert len(update.trades) == 1
     assert update.trades[0].side == "BUY"
     assert update.trades[0].price == Decimal("100")
@@ -28,6 +29,50 @@ def test_invalid_or_partial_market_messages_do_not_invent_a_book():
     assert update.best_ask is None
     assert update.bid_updated and update.ask_updated
     assert not update.trades
+
+
+def test_incremental_book_updates_preserve_other_levels_and_remove_empty_levels():
+    book = OrderBookState()
+    initial = decode_orderbook_message({
+        "type": "snapshot",
+        "data": {
+            "b": [["100000000000000000000", "10"], ["99000000000000000000", "8"]],
+            "a": [["101000000000000000000", "5"], ["102000000000000000000", "6"]],
+        },
+    })
+    assert book.apply(initial) == (Decimal("100"), Decimal("101"))
+
+    # An incremental change at a worse bid must not replace the existing best level.
+    lower_bid_and_remove_best_ask = decode_orderbook_message({
+        "type": "update",
+        "data": {
+            "b": [["99500000000000000000", "3"]],
+            "a": [["101000000000000000000", "0"]],
+        },
+    })
+    assert not lower_bid_and_remove_best_ask.snapshot
+    assert book.apply(lower_bid_and_remove_best_ask) == (Decimal("100"), Decimal("102"))
+
+    remove_best_bid = decode_orderbook_message({
+        "type": "update",
+        "data": {"b": [["100000000000000000000", "0"]]},
+    })
+    assert book.apply(remove_best_bid) == (Decimal("99.5"), Decimal("102"))
+
+
+def test_successful_subscription_payload_is_a_fresh_snapshot():
+    book = OrderBookState()
+    book.apply(decode_orderbook_message({
+        "type": "snapshot",
+        "data": {"b": [["100000000000000000000", "1"]], "a": [["101000000000000000000", "1"]]},
+    }))
+    subscribed = decode_orderbook_message({
+        "type": "subscribed",
+        "status": "success",
+        "data": {"b": [["99500000000000000000", "2"]], "a": [["102000000000000000000", "2"]]},
+    })
+    assert subscribed.snapshot
+    assert book.apply(subscribed) == (Decimal("99.5"), Decimal("102"))
 
 
 def test_market_address_and_observation_questions_are_explicit():

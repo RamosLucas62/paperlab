@@ -33,8 +33,8 @@ Cadastre no editor de ambiente do Compose:
 | `WORKER_INTERVAL_SECONDS` | Opcional; padrão 60. |
 | `MONAD_RPC_URL` | Opcional; vazio seleciona o RPC público conforme `MONAD_CHAIN_ID`. Consulta somente chain ID, bloco e bytecode do mercado. |
 | `MONAD_CHAIN_ID` | `10143` (Monad Testnet, padrão) ou `143` (Monad Mainnet em modo somente leitura). Outros IDs são recusados. |
-| `KURU_WS_URL` | Opcional; vazio seleciona `wss://ws.testnet.kuru.io` na testnet ou `wss://ws.kuru.io` na mainnet. O host deve corresponder ao chain ID. |
-| `KURU_MARKET_ADDRESS` | Endereço do mercado MON/USDC Kuru na rede selecionada. Na mainnet somente leitura, o endereço conferido é `0x065c9d28e428a0db40191a54d33d5b7c71a9c394`. Na testnet, use um contrato implantado nessa rede. Sem endereço, o monitor fica desabilitado. |
+| `KURU_WS_URL` | Opcional; vazio seleciona `wss://ws.kuru.io` somente na mainnet. O SDK atual não documenta um feed WSS ativo para a Testnet; não use o host legado `ws.testnet.kuru.io`. |
+| `KURU_MARKET_ADDRESS` | Endereço do mercado MON/USDC Kuru na rede selecionada. Na mainnet somente leitura, o endereço conferido é `0x065c9d28e428a0db40191a54d33d5b7c71a9c394`. Na testnet, um contrato sem feed WSS ativo não habilita o monitor. |
 | `KURU_SYMBOL` | Opcional; padrão `MON/USDC`, rótulo mostrado no painel. |
 | `TERMINAL_SAMPLE_INTERVAL_SECONDS` | Opcional; intervalo mínimo de gravação das amostras do gráfico; padrão 5 segundos. |
 | `OPENROUTER_API_KEY` | Opcional; necessário apenas para ativar Jev. A chave não deve ser enviada no chat ou navegador. |
@@ -61,7 +61,7 @@ Para a VPS PaperLab já configurada no EasyPanel, mantenha o serviço Compose at
 
 ### Observação de mercado atual
 
-A configuração padrão continua na Monad Testnet. A checagem read-only desta sessão confirmou chain ID `10143` em `https://testnet-rpc.monad.xyz`; o antigo host `rpc.testnet.monad.xyz` não resolveu via DNS. Ainda não há mercado Kuru de Testnet validado: `ws.testnet.kuru.io` não resolveu e o endereço de exemplo do SDK legado não tem bytecode após o reset da Testnet. O serviço permanece sem feed até receber um endereço e endpoint funcionais. Para observar o mercado público MON/USDC da mainnet sem enviar transações, use explicitamente estas variáveis no Environment do Compose:
+A configuração padrão continua na Monad Testnet, mas o monitor fica bloqueado: o RPC responde com chain ID `10143`, enquanto a Kuru não documenta um feed WSS ativo de Testnet no SDK atual. O host `ws.testnet.kuru.io` e o endereço de exemplo vêm do SDK legado; o host não resolveu e o endereço não tem bytecode após o reset da Testnet. Não preencha esse host antigo. Para observar o mercado público MON/USDC da mainnet sem enviar transações, selecione explicitamente a rede e use estas variáveis no Environment do Compose:
 
 ```env
 MONAD_CHAIN_ID=143
@@ -71,7 +71,7 @@ KURU_MARKET_ADDRESS=0x065c9d28e428a0db40191a54d33d5b7c71a9c394
 KURU_SYMBOL=MON/USDC
 ```
 
-Isso só lê dados públicos: o PaperLab não recebe carteira ou chave privada e o serviço não assina nem transmite ordens Kuru. Se preferir ficar na testnet, mantenha `MONAD_CHAIN_ID=10143` e use um endereço de mercado implantado nessa rede.
+Isso só lê dados públicos: o PaperLab não recebe carteira ou chave privada e o serviço não assina nem transmite ordens Kuru. Se preferir ficar na Testnet, mantenha `MONAD_CHAIN_ID=10143` e `KURU_WS_URL` vazio; o monitor permanecerá desativado até que a Kuru publique um feed WSS ativo e exista um contrato de mercado nessa rede.
 
 ## GitHub público e licença
 

@@ -1,6 +1,7 @@
 from decimal import Decimal
 from functools import lru_cache
 from urllib.parse import urlsplit
+import warnings
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -10,7 +11,9 @@ MONAD_NETWORKS = {
     10143: {
         "name": "Monad Testnet",
         "rpc_url": "https://testnet-rpc.monad.xyz",
-        "kuru_ws_url": "wss://ws.testnet.kuru.io",
+        # Kuru's current official SDK documents the frontend feed on mainnet
+        # only. A configured old testnet hostname is ignored with a warning.
+        "kuru_ws_url": "",
     },
     143: {
         "name": "Monad Mainnet (somente leitura)",
@@ -88,7 +91,7 @@ class Settings(BaseSettings):
             or parsed.query
             or parsed.fragment
         ):
-            raise ValueError("KURU_WS_URL deve usar o feed WSS oficial da Kuru para testnet ou mainnet.")
+            raise ValueError("KURU_WS_URL deve usar um host WSS oficial da Kuru.")
         return value.strip().rstrip("/")
 
     @model_validator(mode="after")
@@ -98,6 +101,20 @@ class Settings(BaseSettings):
             self.monad_rpc_url = network["rpc_url"]
         if not self.kuru_ws_url.strip():
             self.kuru_ws_url = network["kuru_ws_url"]
+        if not network["kuru_ws_url"] and self.kuru_ws_url:
+            if urlsplit(self.kuru_ws_url).hostname == "ws.testnet.kuru.io":
+                warnings.warn(
+                    "KURU_WS_URL aponta para o feed legado da Kuru Testnet e será ignorado; "
+                    "o monitor permanecerá desativado até haver um feed atual.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+                self.kuru_ws_url = ""
+                return self
+            raise ValueError(
+                "A Kuru não documenta um feed WSS ativo para Monad Testnet; deixe KURU_WS_URL vazio. "
+                "O endpoint testnet legado não está validado."
+            )
         expected_host = urlsplit(network["kuru_ws_url"]).hostname
         configured_host = urlsplit(self.kuru_ws_url).hostname
         if configured_host != expected_host:

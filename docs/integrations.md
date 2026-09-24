@@ -58,6 +58,7 @@ Referências oficiais conferidas:
 
 - O terminal usa `eth_chainId` e `eth_blockNumber` por JSON-RPC. Aceita Monad Testnet (10143, padrão) ou Monad Mainnet (143, observação somente leitura), e confere o RPC ao iniciar o monitor.
 - O serviço separado `bot` assina `frontendOrderbook` no WebSocket Kuru (`KURU_WS_URL`) para `KURU_MARKET_ADDRESS`. O host precisa corresponder ao chain ID. Antes da conexão, `eth_getCode` confirma bytecode do mercado na mesma rede. O serviço não recebe carteira nem chave privada, não assina e não envia transações.
+- O SDK oficial atual documenta `wss://ws.kuru.io/` para o feed de leitura da mainnet, mas não documenta endpoint ativo para Monad Testnet. Por isso, Testnet continua como rede padrão para RPC, porém sem feed Kuru; o sistema deixa `KURU_WS_URL` vazio e bloqueia o botão do monitor. O endereço/host do SDK legado não é usado como fallback.
 - O botão **Iniciar monitor** abre a conexão. Ao parar, o processo fecha o feed e desativa Jev. O serviço fica ocioso depois de iniciar o container. O terminal mantém no máximo 30 dias de amostras/eventos/observações.
 - BUY/SELL no histórico representa apenas o lado agressor de eventos `Trade` publicados pelo feed. Hashes válidos abrem o explorador da rede selecionada. Preços de negócio podem aparecer sem tamanho normalizado, porque a escala de tamanho da Kuru depende do mercado; a aplicação não infere essa escala.
 

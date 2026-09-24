@@ -18,7 +18,7 @@ from paperlab.budget import BudgetExceeded, reconcile_ai_budget, reserve_ai_budg
 from paperlab.config import get_settings
 from paperlab.database import SessionLocal
 from paperlab.demo import ensure_default_experiment
-from paperlab.market_feed import decode_orderbook_message, market_address_is_valid, terminal_jev_questions
+from paperlab.market_feed import OrderBookState, decode_orderbook_message, market_address_is_valid, terminal_jev_questions
 from paperlab.models import JevObservation, MarketEvent, MarketSample, TerminalControl
 from paperlab.openrouter import ModelIntegrationError, OpenRouterClient
 from paperlab.terminal_state import ensure_terminal_control
@@ -87,10 +87,9 @@ async def assert_market_contract_exists() -> None:
         raise RuntimeError(f"KURU_MARKET_ADDRESS não tem contrato na {network} configurada.")
 
 
-def _persist_message(message: dict, block_number: int | None, prior_bid: Decimal | None, prior_ask: Decimal | None) -> tuple[MarketSample | None, bool, Decimal | None, Decimal | None]:
+def _persist_message(message: dict, block_number: int | None, book: OrderBookState) -> tuple[MarketSample | None, bool]:
     parsed = decode_orderbook_message(message)
-    current_bid = parsed.best_bid if parsed.bid_updated else prior_bid
-    current_ask = parsed.best_ask if parsed.ask_updated else prior_ask
+    current_bid, current_ask = book.apply(parsed)
     sample = None
     jev_due = False
     now = _now()
@@ -124,7 +123,7 @@ def _persist_message(message: dict, block_number: int | None, prior_bid: Decimal
         db.commit()
         if sample is not None:
             db.refresh(sample)
-        return sample, jev_due, current_bid, current_ask
+        return sample, jev_due
 
 
 async def _classify_with_jev(sample: MarketSample):
@@ -208,8 +207,7 @@ async def _run_feed_session():
     last_rpc = time.monotonic()
     async with connect(settings.kuru_ws_url, open_timeout=12, close_timeout=5, ping_interval=20, ping_timeout=20, max_size=10 * 1024 * 1024) as socket:
         await socket.send(json.dumps(subscription))
-        last_bid = None
-        last_ask = None
+        book = OrderBookState()
         while True:
             with SessionLocal() as db:
                 control = ensure_control(db)
@@ -240,7 +238,7 @@ async def _run_feed_session():
                     last_rpc = time.monotonic()
                 except Exception:
                     logger.exception("Monad RPC temporarily unavailable")
-            sample, jev_due, last_bid, last_ask = _persist_message(payload, block_number, last_bid, last_ask)
+            sample, jev_due = _persist_message(payload, block_number, book)
             if jev_due and sample is not None:
                 await _classify_with_jev(sample)
 

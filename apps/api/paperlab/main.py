@@ -211,6 +211,7 @@ def market_terminal(db: Session = Depends(get_db), _user: str = Depends(require_
     return {
         "configuration": {
             "market_configured": market_address_is_valid(settings.kuru_market_address),
+            "kuru_feed_configured": bool(settings.kuru_ws_url),
             "market_address_hint": (settings.kuru_market_address[:6] + "…" + settings.kuru_market_address[-4:]) if market_address_is_valid(settings.kuru_market_address) else None,
             "symbol": settings.kuru_symbol,
             "chain_id": settings.monad_chain_id,
@@ -259,7 +260,7 @@ def market_terminal_control(body: TerminalControlBody, request: Request,
         if not settings.monad_rpc_url.startswith("https://"):
             raise HTTPException(status_code=409, detail="Configure um endpoint HTTPS da Monad em MONAD_RPC_URL.")
         if not settings.kuru_ws_url.startswith("wss://"):
-            raise HTTPException(status_code=409, detail="Configure um endpoint WSS seguro em KURU_WS_URL.")
+            raise HTTPException(status_code=409, detail="A Kuru não documenta um feed WSS ativo para Monad Testnet. Mantenha o monitor parado até haver um endpoint e mercado válidos nessa rede.")
         control.monitor_enabled = True
         control.status = "starting"
         control.last_error = None

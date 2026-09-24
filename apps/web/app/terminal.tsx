@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type TerminalData = {
-  configuration: { market_configured: boolean; market_address_hint: string | null; symbol: string; chain_id: number; rpc_configured: boolean; jev_configured: boolean; jev_model: string; ai_call_budget_usd: string; ai_daily_budget_usd: string; jev_interval_seconds: number };
+  configuration: { market_configured: boolean; kuru_feed_configured: boolean; market_address_hint: string | null; symbol: string; chain_id: number; rpc_configured: boolean; jev_configured: boolean; jev_model: string; ai_call_budget_usd: string; ai_daily_budget_usd: string; jev_interval_seconds: number };
   control: { monitor_enabled: boolean; jev_enabled: boolean; status: string; last_error: string | null; last_block_number: number | null; last_sample_at: string | null; last_jev_at: string | null };
   market: { symbol: string; best_bid: string; best_ask: string; mid_price: string; spread_bps: string; block_number: number | null; observed_at: string } | null;
   samples: { at: string; mid_price: string; best_bid: string; best_ask: string; spread_bps: string }[];
@@ -109,14 +109,15 @@ export default function MarketTerminal({ csrf, onMessage }: { csrf: string; onMe
     <div className="terminal-heading">
       <div><div className="terminal-kicker">PAPERLAB <span>·</span> {network.toUpperCase()} <span>·</span> {data?.configuration.symbol ?? "MON/USDC"}</div><h2>Terminal JEV</h2><p>Acompanhe o livro de ofertas e as classificações de mercado em um ambiente de sombra.</p></div>
       <div className="terminal-actions">
-        {data?.control.monitor_enabled ? <button className="terminal-button secondary" onClick={() => control("stop_monitor")} disabled={busy}>■ Parar monitor</button> : <button className="terminal-button primary" onClick={() => control("start_monitor")} disabled={busy || !data?.configuration.market_configured}>▶ Iniciar monitor</button>}
+        {data?.control.monitor_enabled ? <button className="terminal-button secondary" onClick={() => control("stop_monitor")} disabled={busy}>■ Parar monitor</button> : <button className="terminal-button primary" onClick={() => control("start_monitor")} disabled={busy || !data?.configuration.market_configured || !data?.configuration.kuru_feed_configured}>▶ Iniciar monitor</button>}
         {data?.control.jev_enabled ? <button className="terminal-button secondary" onClick={() => control("disable_jev")} disabled={busy}>Desativar Jev</button> : <button className="terminal-button outline" onClick={() => control("enable_jev")} disabled={busy || !data?.configuration.jev_configured || !data?.control.monitor_enabled}>Ativar Jev</button>}
       </div>
     </div>
 
     <div className="terminal-status-line"><span className={`terminal-status status-${data?.control.status ?? "stopped"}`}><i />{statusLabel(data?.control.status ?? "stopped")}</span><span className="terminal-status-separator" /><span>Último bloco <strong>{data?.control.last_block_number?.toLocaleString("en-US") ?? "—"}</strong></span><span className="terminal-status-separator" /><span>Atualizado <strong>{time(data?.control.last_sample_at)}</strong></span><span className="terminal-status-spacer" /><span className="terminal-market-hint">Mercado {data?.configuration.market_address_hint ?? "não configurado"}</span></div>
 
-    {!data?.configuration.market_configured && <div className="terminal-setup-note"><strong>Falta informar o mercado Kuru.</strong><span>Adicione <code>KURU_MARKET_ADDRESS</code> no EasyPanel. Para observação somente leitura na Monad Mainnet, o par MON/USDC verificado é <code>0x065c9d28e428a0db40191a54d33d5b7c71a9c394</code>. Na Testnet, use somente o contrato implantado nessa rede; os endereços não são intercambiáveis. Depois salve e reimplante <code>api</code> e <code>bot</code>.</span></div>}
+    {!data?.configuration.market_configured && <div className="terminal-setup-note"><strong>Falta informar o mercado Kuru.</strong><span>Adicione <code>KURU_MARKET_ADDRESS</code> no EasyPanel. Para observação somente leitura na Monad Mainnet, o par MON/USDC verificado é <code>0x065c9d28e428a0db40191a54d33d5b7c71a9c394</code>. Endereços não são intercambiáveis entre redes. Depois salve e reimplante <code>api</code> e <code>bot</code>.</span></div>}
+    {!data?.configuration.kuru_feed_configured && <div className="terminal-setup-note"><strong>Feed Kuru de Testnet indisponível.</strong><span>O RPC da Monad Testnet está configurado, mas o SDK atual da Kuru não documenta um feed WSS ativo para essa rede; o host antigo é legado e não está validado. O monitor fica bloqueado para evitar conectar a uma fonte incorreta. Para ver dados Kuru agora, a alternativa é selecionar Monad Mainnet em modo somente leitura, sem carteira nem envio de transações.</span></div>}
     {data?.control.last_error && <div className="terminal-error" role="status">{data.control.last_error}</div>}
 
     <div className="terminal-stats-grid">

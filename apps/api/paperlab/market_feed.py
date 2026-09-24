@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -32,6 +32,43 @@ class BookUpdate:
     trades: tuple[MarketTrade, ...]
     bid_updated: bool
     ask_updated: bool
+    bids: tuple[tuple[Decimal, Decimal], ...]
+    asks: tuple[tuple[Decimal, Decimal], ...]
+    snapshot: bool
+
+
+@dataclass
+class OrderBookState:
+    """Maintain Kuru's initial snapshot and subsequent price-level updates."""
+
+    bids: dict[Decimal, Decimal] = field(default_factory=dict)
+    asks: dict[Decimal, Decimal] = field(default_factory=dict)
+
+    def apply(self, update: BookUpdate) -> tuple[Decimal | None, Decimal | None]:
+        if update.snapshot:
+            self.bids.clear()
+            self.asks.clear()
+        self._apply_side(self.bids, update.bids, update.bid_updated, update.snapshot)
+        self._apply_side(self.asks, update.asks, update.ask_updated, update.snapshot)
+        return (max(self.bids) if self.bids else None, min(self.asks) if self.asks else None)
+
+    @staticmethod
+    def _apply_side(
+        book: dict[Decimal, Decimal],
+        changes: tuple[tuple[Decimal, Decimal], ...],
+        updated: bool,
+        snapshot: bool,
+    ) -> None:
+        if not updated:
+            return
+        if snapshot and not changes:
+            book.clear()
+            return
+        for price, size in changes:
+            if size == 0:
+                book.pop(price, None)
+            elif size > 0:
+                book[price] = size
 
 
 def _price(raw: Any) -> Decimal | None:
@@ -47,18 +84,42 @@ def _price(raw: Any) -> Decimal | None:
         return None
 
 
-def _level_price(level: Any) -> Decimal | None:
+def _level_change(level: Any) -> tuple[Decimal, Decimal] | None:
     if isinstance(level, dict):
-        return _price(level.get("p", level.get("price")))
-    if isinstance(level, (list, tuple)) and level:
-        return _price(level[0])
-    return _price(level)
+        raw_price = level.get("p", level.get("price"))
+        raw_size = level.get("s", level.get("size"))
+    elif isinstance(level, (list, tuple)) and len(level) >= 2:
+        raw_price, raw_size = level[0], level[1]
+    else:
+        return None
+    price = _price(raw_price)
+    size = _number(raw_size)
+    if price is None or price <= 0 or size is None or size < 0:
+        return None
+    return price, size
+
+
+def _number(raw: Any) -> Decimal | None:
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        text = str(raw).strip()
+        value = Decimal(int(text, 16)) if text.lower().startswith("0x") else Decimal(text)
+        return value if value.is_finite() else None
+    except (InvalidOperation, ValueError):
+        return None
 
 
 def _top(levels: Any, *, bids: bool) -> Decimal | None:
     if not isinstance(levels, list):
         return None
-    values = [value for level in levels if (value := _level_price(level)) is not None and value > 0]
+    values = []
+    for level in levels:
+        change = _level_change(level)
+        if change is not None:
+            price, size = change
+            if price > 0 and size > 0:
+                values.append(price)
     if not values:
         return None
     return max(values) if bids else min(values)
@@ -79,10 +140,18 @@ def _event_time(raw: Any) -> datetime | None:
 def decode_orderbook_message(message: dict[str, Any]) -> BookUpdate:
     """Normalize a Kuru frontendOrderbook snapshot/update without inventing data."""
     payload = message.get("data") if isinstance(message.get("data"), dict) else message
+    raw_bids = payload.get("b", payload.get("bids"))
+    raw_asks = payload.get("a", payload.get("asks"))
     bid_updated = "b" in payload or "bids" in payload
     ask_updated = "a" in payload or "asks" in payload
-    bid = _top(payload.get("b", payload.get("bids")), bids=True) if bid_updated else None
-    ask = _top(payload.get("a", payload.get("asks")), bids=False) if ask_updated else None
+    bids = tuple(change for level in raw_bids if (change := _level_change(level)) is not None) if isinstance(raw_bids, list) else ()
+    asks = tuple(change for level in raw_asks if (change := _level_change(level)) is not None) if isinstance(raw_asks, list) else ()
+    message_type = str(message.get("type", "")).lower()
+    snapshot = message_type == "snapshot" or (
+        message_type == "subscribed" and message.get("status") == "success" and isinstance(message.get("data"), dict)
+    ) or (not message_type and bid_updated and ask_updated)
+    bid = _top(raw_bids, bids=True) if bid_updated else None
+    ask = _top(raw_asks, bids=False) if ask_updated else None
 
     raw_events = payload.get("events")
     if raw_events is None and "p" in payload and "ib" in payload:
@@ -124,7 +193,10 @@ def decode_orderbook_message(message: dict[str, Any]) -> BookUpdate:
             event_key=str(identity)[:200], occurred_at=timestamp, side=side,
             price=event_price, size=size, tx_hash=tx_hash,
         ))
-    return BookUpdate(best_bid=bid, best_ask=ask, trades=tuple(trades), bid_updated=bid_updated, ask_updated=ask_updated)
+    return BookUpdate(
+        best_bid=bid, best_ask=ask, trades=tuple(trades), bid_updated=bid_updated, ask_updated=ask_updated,
+        bids=bids, asks=asks, snapshot=snapshot,
+    )
 
 
 def terminal_jev_questions(symbol: str) -> dict:
