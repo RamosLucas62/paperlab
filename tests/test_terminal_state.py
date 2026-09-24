@@ -45,6 +45,7 @@ def test_switching_chain_pauses_monitor_and_clears_network_cursors(db_session):
     control = ensure_terminal_control(db_session, 10143)
     control.monitor_enabled = True
     control.jev_enabled = True
+    control.simulation_enabled = True
     control.status = "connected"
     control.last_block_number = 900
     control.last_sample_at = datetime(2026, 9, 24, 10, tzinfo=timezone.utc)
@@ -56,6 +57,7 @@ def test_switching_chain_pauses_monitor_and_clears_network_cursors(db_session):
     assert switched.network_chain_id == 143
     assert switched.monitor_enabled is False
     assert switched.jev_enabled is False
+    assert switched.simulation_enabled is False
     assert switched.status == "stopped"
     assert switched.last_block_number is None
     assert switched.last_sample_at is None

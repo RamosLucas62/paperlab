@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from paperlab.models import JevObservation, MarketEvent, MarketSample, TerminalControl
+from paperlab.simulation import cancel_open_orders
 
 
 def _network_name(chain_id: int) -> str:
@@ -34,9 +35,11 @@ def ensure_terminal_control(db: Session, chain_id: int) -> TerminalControl:
 
     if control.network_chain_id != chain_id:
         previous_chain_id = control.network_chain_id
+        cancel_open_orders(db, previous_chain_id)
         control.network_chain_id = chain_id
         control.monitor_enabled = False
         control.jev_enabled = False
+        control.simulation_enabled = False
         control.status = "stopped"
         control.last_error = (
             f"Rede alterada de {_network_name(previous_chain_id)} para {_network_name(chain_id)}. "

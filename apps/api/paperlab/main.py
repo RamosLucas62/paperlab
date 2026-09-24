@@ -25,8 +25,9 @@ from paperlab.database import Base, SessionLocal, engine, get_db
 from paperlab.demo import create_demo_experiment, ensure_default_experiment, run_demo_cycle, set_demo_status
 from paperlab.domain import ZERO
 from paperlab.market_feed import market_address_is_valid
-from paperlab.models import AdminUser, Bar, Decision, Experiment, Fill, IntegrationEvent, ModelCall, NewsVersion, OrderIntent, PortfolioSnapshot, Snapshot, TerminalControl
+from paperlab.models import AdminUser, Bar, Decision, Experiment, Fill, IntegrationEvent, ModelCall, NewsVersion, OrderIntent, PortfolioSnapshot, Snapshot, TerminalControl, MarketSample
 from paperlab.openrouter import ModelIntegrationError, OpenRouterClient
+from paperlab.simulation import cancel_open_orders, ensure_simulation_account, simulation_payload
 from paperlab.terminal_state import ensure_terminal_control, load_terminal_history
 
 
@@ -60,7 +61,7 @@ class ExperimentBody(BaseModel):
 
 
 class TerminalControlBody(BaseModel):
-    action: Literal["start_monitor", "stop_monitor", "enable_jev", "disable_jev"]
+    action: Literal["start_monitor", "stop_monitor", "enable_jev", "disable_jev", "enable_simulation", "disable_simulation"]
 
 
 def require_user(request: Request):
@@ -208,6 +209,7 @@ def market_terminal(db: Session = Depends(get_db), _user: str = Depends(require_
     control = _terminal_control(db)
     samples, events, observations = load_terminal_history(db, settings.monad_chain_id)
     latest = samples[0] if samples else None
+    simulation = simulation_payload(db, control, latest, settings.kuru_symbol)
     return {
         "configuration": {
             "market_configured": market_address_is_valid(settings.kuru_market_address),
@@ -226,6 +228,7 @@ def market_terminal(db: Session = Depends(get_db), _user: str = Depends(require_
             "network_chain_id": control.network_chain_id,
             "monitor_enabled": control.monitor_enabled,
             "jev_enabled": control.jev_enabled,
+            "simulation_enabled": control.simulation_enabled,
             "status": control.status,
             "last_error": control.last_error,
             "last_block_number": control.last_block_number,
@@ -244,7 +247,8 @@ def market_terminal(db: Session = Depends(get_db), _user: str = Depends(require_
         "jev_observations": [{"at": _dt_iso(row.observed_at), "status": row.status, "model": row.model,
                               "result": row.result_json, "message": row.message, "cost_usd": None if row.cost_usd is None else str(row.cost_usd),
                               "cost_status": row.cost_status, "latency_ms": row.latency_ms} for row in observations],
-        "safety": {"orders_enabled": False, "transaction_signing": False, "mode": "read_only_shadow"},
+        "simulation": simulation,
+        "safety": {"orders_enabled": False, "transaction_signing": False, "mode": "dry_run" if control.simulation_enabled else "read_only_shadow"},
     }
 
 
@@ -267,6 +271,8 @@ def market_terminal_control(body: TerminalControlBody, request: Request,
     elif body.action == "stop_monitor":
         control.monitor_enabled = False
         control.jev_enabled = False
+        control.simulation_enabled = False
+        cancel_open_orders(db, settings.monad_chain_id)
         control.status = "stopped"
         control.last_error = None
     elif body.action == "enable_jev":
@@ -279,7 +285,26 @@ def market_terminal_control(body: TerminalControlBody, request: Request,
         control.jev_enabled = True
         control.last_error = None
     else:
-        control.jev_enabled = False
+        if body.action == "disable_jev":
+            control.jev_enabled = False
+            control.simulation_enabled = False
+            cancel_open_orders(db, settings.monad_chain_id)
+        elif body.action == "enable_simulation":
+            if not control.monitor_enabled:
+                raise HTTPException(status_code=409, detail="Inicie primeiro o monitor da Kuru.")
+            if not control.jev_enabled:
+                raise HTTPException(status_code=409, detail="Ative primeiro o Jev para classificar o livro de ofertas.")
+            latest = db.scalar(select(MarketSample).where(
+                MarketSample.chain_id == settings.monad_chain_id,
+                MarketSample.symbol == settings.kuru_symbol,
+            ).order_by(MarketSample.observed_at.desc(), MarketSample.id.desc()).limit(1))
+            if latest is None or (datetime.now(timezone.utc) - (latest.observed_at if latest.observed_at.tzinfo else latest.observed_at.replace(tzinfo=timezone.utc))).total_seconds() > 30:
+                raise HTTPException(status_code=409, detail="Aguarde uma cotação recente da Kuru antes de iniciar o DRY RUN.")
+            ensure_simulation_account(db, settings.monad_chain_id, settings.kuru_symbol)
+            control.simulation_enabled = True
+        elif body.action == "disable_simulation":
+            control.simulation_enabled = False
+            cancel_open_orders(db, settings.monad_chain_id)
     control.updated_at = datetime.now(timezone.utc)
     db.commit()
     return {"monitor_enabled": control.monitor_enabled, "jev_enabled": control.jev_enabled, "status": control.status}

@@ -1,4 +1,7 @@
-"""Opt-in, read-only Monad/Kuru terminal worker. It never signs or sends transactions."""
+"""Read-only Monad/Kuru worker with an optional local DRY RUN ledger.
+
+The market connection never signs or submits transactions.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +14,8 @@ import time
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
+from sqlalchemy.orm import Session
 from websockets.asyncio.client import connect
 
 from paperlab.budget import BudgetExceeded, reconcile_ai_budget, reserve_ai_budget
@@ -19,14 +23,16 @@ from paperlab.config import get_settings
 from paperlab.database import SessionLocal
 from paperlab.demo import ensure_default_experiment
 from paperlab.market_feed import OrderBookState, decode_orderbook_message, market_address_is_valid, terminal_jev_questions
-from paperlab.models import JevObservation, MarketEvent, MarketSample, TerminalControl
+from paperlab.models import JevObservation, MarketEvent, MarketSample, TerminalControl, TerminalSimulationDecision, TerminalSimulationFill, TerminalSimulationOrder
 from paperlab.openrouter import ModelIntegrationError, OpenRouterClient
+from paperlab.simulation import advance_simulation_with_sample, expire_open_orders, record_simulated_decision
 from paperlab.terminal_state import ensure_terminal_control
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("paperlab.market_worker")
 settings = get_settings()
+_jev_tasks: set[asyncio.Task] = set()
 
 
 def _now() -> datetime:
@@ -48,15 +54,35 @@ def _set_status(status: str, error: str | None = None, *, block_number: int | No
         db.commit()
 
 
-def _prune_terminal_history():
-    cutoff = _now() - timedelta(days=30)
-    with SessionLocal() as db:
+def _prune_terminal_history(db: Session | None = None, *, now: datetime | None = None):
+    cutoff = (now or _now()) - timedelta(days=30)
+
+    def prune(session: Session):
         old_samples = select(MarketSample.id).where(MarketSample.observed_at < cutoff)
-        db.execute(delete(JevObservation).where(JevObservation.sample_id.in_(old_samples)))
-        db.execute(delete(JevObservation).where(JevObservation.observed_at < cutoff))
-        db.execute(delete(MarketSample).where(MarketSample.observed_at < cutoff))
-        db.execute(delete(MarketEvent).where(MarketEvent.occurred_at < cutoff))
+        simulated_observations = select(TerminalSimulationDecision.observation_id)
+        pinned_samples = select(MarketSample.id).where(or_(
+            MarketSample.id.in_(select(JevObservation.sample_id).where(JevObservation.id.in_(simulated_observations))),
+            MarketSample.id.in_(select(TerminalSimulationOrder.created_sample_id)),
+            MarketSample.id.in_(select(TerminalSimulationOrder.filled_sample_id)),
+            MarketSample.id.in_(select(TerminalSimulationFill.market_sample_id)),
+        ))
+        session.execute(delete(JevObservation).where(
+            or_(JevObservation.sample_id.in_(old_samples), JevObservation.observed_at < cutoff),
+            JevObservation.id.not_in(simulated_observations),
+        ))
+        session.execute(delete(MarketSample).where(
+            MarketSample.observed_at < cutoff,
+            MarketSample.id.not_in(pinned_samples),
+        ))
+        session.execute(delete(MarketEvent).where(MarketEvent.occurred_at < cutoff))
+
+    if db is not None:
+        prune(db)
         db.commit()
+        return
+    with SessionLocal() as session:
+        prune(session)
+        session.commit()
 
 
 async def monad_block_number() -> tuple[int, int]:
@@ -87,7 +113,7 @@ async def assert_market_contract_exists() -> None:
         raise RuntimeError(f"KURU_MARKET_ADDRESS não tem contrato na {network} configurada.")
 
 
-def _persist_message(message: dict, block_number: int | None, book: OrderBookState) -> tuple[MarketSample | None, bool]:
+def _persist_message(message: dict, block_number: int | None, book: OrderBookState, *, jev_inflight: bool = False) -> tuple[MarketSample | None, bool]:
     parsed = decode_orderbook_message(message)
     current_bid, current_ask = book.apply(parsed)
     sample = None
@@ -116,7 +142,14 @@ def _persist_message(message: dict, block_number: int | None, book: OrderBookSta
                 control.last_block_number = block_number
                 last_jev = control.last_jev_at
                 elapsed = settings.terminal_jev_interval_seconds + 1 if last_jev is None else (now - (last_jev if last_jev.tzinfo else last_jev.replace(tzinfo=timezone.utc))).total_seconds()
-                jev_due = control.jev_enabled and elapsed >= max(30, settings.terminal_jev_interval_seconds)
+                jev_due = control.jev_enabled and not jev_inflight and elapsed >= max(30, settings.terminal_jev_interval_seconds)
+                if jev_due:
+                    # Reserve the cadence when dispatching so a slow provider call
+                    # cannot create duplicate paid requests while the feed continues.
+                    control.last_jev_at = now
+            if sample is not None:
+                advance_simulation_with_sample(db, control, sample, now=now)
+            expire_open_orders(db, settings.monad_chain_id, now=now)
         control.status = "connected"
         control.last_error = None
         control.updated_at = now
@@ -140,10 +173,17 @@ async def _classify_with_jev(sample: MarketSample):
             reserve_ai_budget(db, experiment_id=experiment.id, cycle_id=cycle_id, reservation_key=reservation_key,
                 proposed_usd=cap, per_call_cap_usd=cap, daily_cap_usd=Decimal(settings.ai_daily_budget_usd))
         except BudgetExceeded as exc:
-            db.add(JevObservation(sample_id=sample.id, model=settings.jev_model, status="budget_blocked",
-                result_json=None, message=str(exc), cost_usd=None, cost_status="not_called", latency_ms=0))
+            blocked = JevObservation(sample_id=sample.id, model=settings.jev_model, status="budget_blocked",
+                result_json=None, message=str(exc), cost_usd=None, cost_status="not_called", latency_ms=0)
+            db.add(blocked)
             control = ensure_control(db)
             control.last_jev_at = _now()
+            db.flush()
+            quote = db.scalar(select(MarketSample).where(
+                MarketSample.chain_id == settings.monad_chain_id,
+                MarketSample.symbol == settings.kuru_symbol,
+            ).order_by(MarketSample.observed_at.desc(), MarketSample.id.desc()).limit(1))
+            record_simulated_decision(db, control, blocked, quote)
             db.commit()
             return
 
@@ -176,6 +216,29 @@ async def _classify_with_jev(sample: MarketSample):
         error_message = "Postura BUY/SELL/HOLD somente observacional; não é ordem nem recomendação."
     except (ModelIntegrationError, ValueError) as exc:
         error_message = str(exc)
+    except asyncio.CancelledError:
+        # A cancelled in-flight provider request has unknown usage; keep the
+        # reservation conservative and record an abstention for the simulator.
+        with SessionLocal() as db:
+            try:
+                reconcile_ai_budget(db, reservation_key, None)
+                observation = JevObservation(sample_id=sample.id, model=settings.jev_model, status="cancelled",
+                    result_json=None, message="Chamada Jev cancelada; custo e resultado desconhecidos.",
+                    cost_usd=None, cost_status="unknown", latency_ms=0)
+                db.add(observation)
+                control = ensure_control(db)
+                control.last_jev_at = _now()
+                db.flush()
+                quote = db.scalar(select(MarketSample).where(
+                    MarketSample.chain_id == settings.monad_chain_id,
+                    MarketSample.symbol == settings.kuru_symbol,
+                ).order_by(MarketSample.observed_at.desc(), MarketSample.id.desc()).limit(1))
+                record_simulated_decision(db, control, observation, quote)
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception("Could not persist cancelled Jev call")
+        raise
     except Exception:
         error_message = "Falha ao consultar Jev; nenhum resultado foi registrado como decisão válida."
         logger.exception("Jev classification failed")
@@ -186,12 +249,40 @@ async def _classify_with_jev(sample: MarketSample):
         except Exception:
             db.rollback()
             logger.exception("Could not reconcile Jev budget reservation")
-        db.add(JevObservation(sample_id=sample.id, model=settings.jev_model, status=status,
+        observation = JevObservation(sample_id=sample.id, model=settings.jev_model, status=status,
             result_json=result_json, message=error_message or "Falha sem detalhe.", cost_usd=cost,
-            cost_status=cost_status, latency_ms=latency_ms))
+            cost_status=cost_status, latency_ms=latency_ms)
+        db.add(observation)
         control = ensure_control(db)
         control.last_jev_at = _now()
         control.updated_at = _now()
+        db.flush()
+        quote = db.scalar(select(MarketSample).where(
+            MarketSample.chain_id == settings.monad_chain_id,
+            MarketSample.symbol == settings.kuru_symbol,
+        ).order_by(MarketSample.observed_at.desc(), MarketSample.id.desc()).limit(1))
+        record_simulated_decision(db, control, observation, quote)
+        db.commit()
+
+
+def _track_jev_task(sample: MarketSample) -> None:
+    task = asyncio.create_task(_classify_with_jev(sample), name=f"paperlab-jev-{sample.id}")
+    _jev_tasks.add(task)
+
+    def finished(done: asyncio.Task) -> None:
+        _jev_tasks.discard(done)
+        if done.cancelled():
+            return
+        error = done.exception()
+        if error is not None:
+            logger.error("Jev background classification failed: %s", error, exc_info=(type(error), error, error.__traceback__))
+
+    task.add_done_callback(finished)
+
+
+def _expire_simulated_orders() -> None:
+    with SessionLocal() as db:
+        expire_open_orders(db, settings.monad_chain_id)
         db.commit()
 
 
@@ -217,6 +308,7 @@ async def _run_feed_session():
             try:
                 raw = await asyncio.wait_for(socket.recv(), timeout=5)
             except TimeoutError:
+                _expire_simulated_orders()
                 if time.monotonic() - last_rpc >= 15:
                     _, block_number = await monad_block_number()
                     _set_status("connected", block_number=block_number)
@@ -238,9 +330,10 @@ async def _run_feed_session():
                     last_rpc = time.monotonic()
                 except Exception:
                     logger.exception("Monad RPC temporarily unavailable")
-            sample, jev_due = _persist_message(payload, block_number, book)
+            jev_inflight = any(not task.done() for task in _jev_tasks)
+            sample, jev_due = _persist_message(payload, block_number, book, jev_inflight=jev_inflight)
             if jev_due and sample is not None:
-                await _classify_with_jev(sample)
+                _track_jev_task(sample)
 
 
 async def run():

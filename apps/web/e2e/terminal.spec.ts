@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("terminal displays a shadow Jev posture without creating an order", async ({ page }) => {
+test("terminal keeps the dry-run simulator visibly disabled until it is explicitly enabled", async ({ page }) => {
   const password = process.env.ADMIN_PASSWORD;
   test.skip(!password, "Set temporary administrator credentials before running Playwright.");
 
@@ -14,7 +14,7 @@ test("terminal displays a shadow Jev posture without creating an order", async (
         ai_call_budget_usd: "0.10", ai_daily_budget_usd: "2.00", jev_interval_seconds: 120,
       },
       control: {
-        monitor_enabled: true, jev_enabled: true, status: "connected", last_error: null,
+        monitor_enabled: true, jev_enabled: true, simulation_enabled: false, status: "connected", last_error: null,
         last_block_number: 101, last_sample_at: "2026-09-24T13:00:00Z", last_jev_at: "2026-09-24T13:00:00Z",
       },
       market: { symbol: "MON/USDC", best_bid: "0.024", best_ask: "0.025", mid_price: "0.0245", spread_bps: "408", block_number: 101, observed_at: "2026-09-24T13:00:00Z" },
@@ -31,6 +31,15 @@ test("terminal displays a shadow Jev posture without creating an order", async (
         message: "Postura BUY/SELL/HOLD somente observacional; não é ordem nem recomendação.",
         cost_usd: "0.002", cost_status: "reported", latency_ms: 81,
       }],
+      simulation: {
+        enabled: false, mode: "dry_run", account: null, open_order: null, orders: [], decisions: [],
+        assumptions: {
+          order_notional_usdc: "10.00", minimum_confidence: "0.80", order_ttl_seconds: 120,
+          fill_rule: "A ordem limite é considerada preenchida quando a melhor cotação oposta toca/cruza o preço; fila e impacto de mercado não são modelados.",
+          cost_rule: "Taxas, gas e slippage não estão modelados; P&L é bruto e pode divergir do resultado real.",
+          starting_cash_usdc: "1000.00",
+        },
+      },
       safety: { orders_enabled: false, transaction_signing: false, mode: "read_only_shadow" },
     }),
   }));
@@ -43,5 +52,7 @@ test("terminal displays a shadow Jev posture without creating an order", async (
   await expect(page.getByText("POSTURA OBSERVACIONAL")).toBeVisible();
   await expect(page.getByText("HOLD", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("72% confiança reportada")).toBeVisible();
-  await expect(page.getByText("O PaperLab não assina transações", { exact: false })).toBeVisible();
+  await expect(page.getByText("DRY RUN DESATIVADO")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ativar DRY RUN" })).toBeEnabled();
+  await expect(page.getByText("Não há carteira nem execução real", { exact: false })).toBeVisible();
 });

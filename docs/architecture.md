@@ -5,8 +5,8 @@
 - `apps/web`: Next.js e TypeScript. Interface privada em português; todas as chamadas passam pela rota `/api` do servidor Next. O navegador não recebe tokens de sessão das integrações.
 - `apps/api`: FastAPI/Pydantic, regras de aplicação, SQLAlchemy e clientes HTTPX. Sessões administrativas são assinadas, `HttpOnly`, `SameSite=Strict`; ações mutáveis exigem token CSRF. Senhas são armazenadas com Argon2.
 - `apps/api/paperlab/worker.py`: processo separado que consulta estado persistido e avança somente experimentos DEMO. Na inicialização ele não coleta dados nem chama modelos ou corretora.
-- `apps/api/paperlab/bot_worker.py`: processo separado e controlado pelo banco para o Terminal JEV. Só abre a conexão WebSocket Kuru depois de um operador iniciar o monitor; lê altura de bloco via JSON-RPC Monad. Jev roda somente após ativação explícita, com reserva de orçamento e intervalo mínimo. O serviço não carrega chave de carteira nem código para assinar/enviar transação.
-- `apps/api/paperlab/market_feed.py`: normaliza snapshots do livro e negócios reportados pela Kuru sem inferir preço/tamanho ausentes. `MarketSample`, `MarketEvent` e `JevObservation` guardam amostras, eventos e classificações do terminal separadamente das tabelas de ordens DEMO/PAPER.
+- `apps/api/paperlab/bot_worker.py`: processo separado e controlado pelo banco para o Terminal JEV. Só abre o feed WebSocket Kuru após ação explícita; lê altura de bloco por JSON-RPC Monad. Jev roda sob ativação, reserva de orçamento e intervalo configurado. `simulation.py` converte classificações tipadas e filtradas em ledger virtual opcional; não importa cliente de carteira/RPC de escrita e não assina nem envia transações.
+- `apps/api/paperlab/market_feed.py`: normaliza snapshots do livro e negócios reportados pela Kuru sem inferir preço/tamanho ausentes. `MarketSample`, `MarketEvent` e `JevObservation` guardam dados do mercado; tabelas próprias guardam decisões, ordens, fills e conta DRY RUN, isoladas das tabelas DEMO/PAPER.
 - `apps/api/migrations`: migração Alembic inicial. SQLite é usado para desenvolvimento offline; PostgreSQL é o destino recomendado para coordenação persistente e pode ser local ou uma instância Supabase dedicada.
 - `packages/policy/filter-v1.json`: parâmetros versionados de classificação. `fixtures/demo_news.json`: notícias inventadas para exercício da interface, sempre sintéticas.
 
@@ -18,7 +18,7 @@ Na DEMO, o gerador usa seed fixa e valores artificiais. A estratégia cria o can
 
 ## Limites de execução atuais
 
-O modo de experimento continua fixado em DEMO; a interface não cria experimentos PAPER ou REPLAY. A tela Terminal é uma coleta observacional separada: Kuru/Monad são somente leitura e Jev não emite ordens. As integrações Alpaca permanecem sem ligação ao worker. Reservas de orçamento protegem chamadas Jev iniciadas explicitamente no terminal. Não há caminho de negociação Monad/Kuru nem cálculo de P&L.
+O modo de experimento continua fixado em DEMO; a interface não cria experimentos PAPER ou REPLAY. A Kuru/Monad seguem somente leitura. O DRY RUN opcional calcula P&L bruto com regras e hipóteses locais visíveis na tela; Jev não chama exchange. Não há carteira nem caminho de execução de ordem Monad/Kuru. As integrações Alpaca permanecem sem ligação ao worker. Reservas de orçamento protegem chamadas Jev iniciadas explicitamente no terminal.
 
 ## Fronteiras de segurança
 

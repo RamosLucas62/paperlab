@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from paperlab.database import Base
@@ -227,6 +227,7 @@ class TerminalControl(Base):
     network_chain_id: Mapped[int] = mapped_column(Integer, default=10143, server_default="10143", nullable=False)
     monitor_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     jev_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    simulation_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="stopped", nullable=False)
     last_error: Mapped[Optional[str]] = mapped_column(Text)
     last_block_number: Mapped[Optional[int]] = mapped_column(Integer)
@@ -272,3 +273,74 @@ class JevObservation(Base):
     cost_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
     cost_status: Mapped[str] = mapped_column(String(16), nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class TerminalSimulationAccount(Base):
+    __tablename__ = "terminal_simulation_accounts"
+    __table_args__ = (UniqueConstraint("chain_id", "symbol", name="uq_terminal_simulation_account_market"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chain_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(24), nullable=False)
+    starting_cash_usdc: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    cash_usdc: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    position_qty: Mapped[Decimal] = mapped_column(Numeric(30, 12), default=Decimal("0"), nullable=False)
+    average_entry_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), default=Decimal("0"), nullable=False)
+    realized_pnl_usdc: Mapped[Decimal] = mapped_column(Numeric(24, 8), default=Decimal("0"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class TerminalSimulationDecision(Base):
+    __tablename__ = "terminal_simulation_decisions"
+    __table_args__ = (
+        UniqueConstraint("observation_id", name="uq_terminal_simulation_decision_observation"),
+        CheckConstraint("status IN ('queued', 'hold', 'abstain', 'blocked')", name="ck_terminal_simulation_decision_status"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chain_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(24), nullable=False)
+    observation_id: Mapped[int] = mapped_column(ForeignKey("jev_observations.id"), nullable=False, index=True)
+    stance: Mapped[str] = mapped_column(String(12), nullable=False)
+    confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
+
+
+class TerminalSimulationOrder(Base):
+    __tablename__ = "terminal_simulation_orders"
+    __table_args__ = (
+        UniqueConstraint("decision_id", name="uq_terminal_simulation_order_decision"),
+        CheckConstraint("side IN ('BUY', 'SELL')", name="ck_terminal_simulation_order_side"),
+        CheckConstraint("status IN ('open', 'filled', 'cancelled', 'expired')", name="ck_terminal_simulation_order_status"),
+        CheckConstraint("quantity > 0 AND limit_price > 0 AND notional_usdc > 0", name="ck_terminal_simulation_order_positive_values"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chain_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(24), nullable=False)
+    decision_id: Mapped[int] = mapped_column(ForeignKey("terminal_simulation_decisions.id"), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open", index=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    limit_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    notional_usdc: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    created_sample_id: Mapped[int] = mapped_column(ForeignKey("market_samples.id"), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
+    filled_sample_id: Mapped[Optional[int]] = mapped_column(ForeignKey("market_samples.id"))
+    filled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class TerminalSimulationFill(Base):
+    __tablename__ = "terminal_simulation_fills"
+    __table_args__ = (
+        UniqueConstraint("order_id", name="uq_terminal_simulation_fill_order"),
+        CheckConstraint("quantity > 0 AND price > 0 AND gross_value_usdc > 0", name="ck_terminal_simulation_fill_positive_values"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("terminal_simulation_orders.id"), nullable=False, index=True)
+    market_sample_id: Mapped[int] = mapped_column(ForeignKey("market_samples.id"), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    gross_value_usdc: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)

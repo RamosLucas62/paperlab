@@ -5,10 +5,11 @@ Laboratório privado para comparar três versões de uma regra didática: A usa 
 ## Estado desta entrega
 
 - A DEMO sintética continua disponível no painel: login, experimentos, ciclos, diferenças A/B/C rastreáveis e exportação JSON/CSV.
-- O **Terminal JEV** acrescenta feed do livro/negociações Kuru e altura da Monad em modo somente leitura, mais classificações Jev opcionais em modo sombra. Testnet é o padrão; a mainnet tem configuração explícita somente para leitura. O monitor só inicia após ação no painel; Jev permanece desligado até ativação explícita.
-- **Sem execução de ordens:** esta etapa não conecta carteira, não assina nem envia transações e não calcula P&L. BUY/SELL na fita identifica o lado agressor informado pela Kuru, não ordens do PaperLab. BUY/SELL/HOLD do Jev é somente uma postura observacional de sombra. A DEMO antiga não usa dados da Kuru.
-- **Integração externa ainda precisa ser configurada na VPS:** o modo mainnet somente leitura tem um endereço MON/USDC verificado e documentado em [EasyPanel](docs/easypanel.md). O RPC Testnet funciona, mas a Kuru não documenta feed WSS ativo para essa rede; o monitor permanece bloqueado nela até haver endpoint e mercado válidos. A chave OpenRouter não foi configurada. As chamadas Jev podem ter custo e respeitam os limites de orçamento configurados.
-- REPLAY, pipeline PAPER ponta a ponta, reconciliação contínua de eventos/fills e avaliação por dados prospectivos permanecem fora do fluxo funcional atual. Ver [limitações](docs/limitations.md).
+- O **Terminal JEV** acrescenta feed Kuru e altura da Monad em modo somente leitura, classificações Jev opcionais e um simulador local **DRY RUN**, desligado por padrão. Mainnet só é usada em leitura; o monitor e o Jev exigem ativações explícitas.
+- **Sem execução real:** o DRY RUN registra ordens, fills, posição e P&L bruto fictícios. A regra local exige confiança mínima de 80%, usa ordens de 10 USDC e só considera fill quando uma cotação oposta posterior toca/cruza o limite. A simulação não conhece fila, impacto, taxas nem slippage; os resultados não representam execução ou rentabilidade reais. Não há carteira, assinatura, transmissão de transação ou variável para liberar negociação real.
+- BUY/SELL na fita identifica o lado agressor do mercado Kuru e nunca aciona ordens. Somente classificações Jev válidas, com relevância, risco e suficiência aprovados por filtros determinísticos, podem alimentar o DRY RUN. A DEMO antiga continua independente do feed Kuru.
+- **Integração externa precisa ser configurada na VPS:** um endereço MON/USDC verificado para leitura em mainnet está documentado em [EasyPanel](docs/easypanel.md). O RPC Testnet funciona, mas a Kuru não documenta feed WSS ativo nessa rede; o monitor permanece bloqueado até haver feed e mercado válidos. OpenRouter é opcional; chamadas Jev podem ter custo e respeitam os limites de orçamento configurados.
+- REPLAY, pipeline PAPER ponta a ponta, reconciliação de execução com corretora e avaliação por dados prospectivos permanecem fora do fluxo funcional atual. Ver [limitações](docs/limitations.md).
 
 ## Requisitos
 
@@ -105,7 +106,7 @@ Isso não deve ser apontado a um banco Supabase ou outro banco externo durante d
 
 Veja [.env.example](.env.example) e [integrações](docs/integrations.md). Para diagnósticos autenticados, cadastre credenciais paper separadas em A, B e C, credencial Alpaca para dados e chave OpenRouter no ambiente privado da aplicação. Não envie segredos no chat, frontend, fixtures ou commits. Os botões de diagnóstico não enviam ordens.
 
-O Terminal JEV não é um fluxo PAPER nem conecta uma corretora. Ele mantém feed e classificações observacionais isolados da DEMO e não contém fluxo de envio de ordens Monad/Kuru.
+O Terminal JEV não é um fluxo PAPER de corretora e não conecta uma corretora. O simulador mantém um ledger virtual separado da DEMO e do feed público; não envia ordens Monad/Kuru.
 
 ## Documentação
 
