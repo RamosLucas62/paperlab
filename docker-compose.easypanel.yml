@@ -27,6 +27,17 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in Easypanel}
       COOKIE_SECURE: "true"
       WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-60}
+      MONAD_RPC_URL: ${MONAD_RPC_URL:-https://rpc.monad.xyz}
+      MONAD_CHAIN_ID: ${MONAD_CHAIN_ID:-143}
+      KURU_WS_URL: ${KURU_WS_URL:-wss://ws.kuru.io/}
+      KURU_MARKET_ADDRESS: ${KURU_MARKET_ADDRESS:-}
+      KURU_SYMBOL: ${KURU_SYMBOL:-MON/USDC}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      JEV_MODEL: ${JEV_MODEL:-typesafe/jev-1.13}
+      AI_DAILY_BUDGET_USD: ${AI_DAILY_BUDGET_USD:-2.00}
+      AI_CALL_BUDGET_USD: ${AI_CALL_BUDGET_USD:-0.10}
+      TERMINAL_SAMPLE_INTERVAL_SECONDS: ${TERMINAL_SAMPLE_INTERVAL_SECONDS:-5}
+      TERMINAL_JEV_INTERVAL_SECONDS: ${TERMINAL_JEV_INTERVAL_SECONDS:-120}
     command: ["sh", "-c", "alembic -c apps/api/alembic.ini upgrade head && uvicorn paperlab.main:app --host 0.0.0.0 --port 8000"]
     depends_on:
       postgres:
@@ -48,6 +59,30 @@ services:
       DATABASE_URL: postgresql+psycopg://paperlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Easypanel}@postgres:5432/paperlab
       WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-60}
     command: ["python", "-m", "paperlab.worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  bot:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_MODE: demo
+      DATABASE_URL: postgresql+psycopg://paperlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Easypanel}@postgres:5432/paperlab
+      MONAD_RPC_URL: ${MONAD_RPC_URL:-https://rpc.monad.xyz}
+      MONAD_CHAIN_ID: ${MONAD_CHAIN_ID:-143}
+      KURU_WS_URL: ${KURU_WS_URL:-wss://ws.kuru.io/}
+      KURU_MARKET_ADDRESS: ${KURU_MARKET_ADDRESS:-}
+      KURU_SYMBOL: ${KURU_SYMBOL:-MON/USDC}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      JEV_MODEL: ${JEV_MODEL:-typesafe/jev-1.13}
+      AI_DAILY_BUDGET_USD: ${AI_DAILY_BUDGET_USD:-2.00}
+      AI_CALL_BUDGET_USD: ${AI_CALL_BUDGET_USD:-0.10}
+      TERMINAL_SAMPLE_INTERVAL_SECONDS: ${TERMINAL_SAMPLE_INTERVAL_SECONDS:-5}
+      TERMINAL_JEV_INTERVAL_SECONDS: ${TERMINAL_JEV_INTERVAL_SECONDS:-120}
+    command: ["python", "-m", "paperlab.bot_worker"]
     depends_on:
       api:
         condition: service_healthy

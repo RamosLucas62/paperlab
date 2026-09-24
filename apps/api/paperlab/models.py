@@ -219,3 +219,53 @@ class BudgetWindow(Base):
     reserved_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8), default=Decimal("0"), nullable=False)
     consumed_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8), default=Decimal("0"), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class TerminalControl(Base):
+    __tablename__ = "terminal_control"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    monitor_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    jev_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default="stopped", nullable=False)
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+    last_block_number: Mapped[Optional[int]] = mapped_column(Integer)
+    last_sample_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_jev_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class MarketSample(Base):
+    __tablename__ = "market_samples"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(24), nullable=False)
+    best_bid: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    best_ask: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    mid_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    spread_bps: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    block_number: Mapped[Optional[int]] = mapped_column(Integer)
+
+
+class MarketEvent(Base):
+    __tablename__ = "market_events"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_key: Mapped[str] = mapped_column(String(200), unique=True, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    size: Mapped[Optional[Decimal]] = mapped_column(Numeric(30, 12))
+    tx_hash: Mapped[Optional[str]] = mapped_column(String(100))
+
+
+class JevObservation(Base):
+    __tablename__ = "jev_observations"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
+    sample_id: Mapped[Optional[int]] = mapped_column(ForeignKey("market_samples.id"))
+    model: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    result_json: Mapped[Optional[dict]] = mapped_column(JSON)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    cost_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 8))
+    cost_status: Mapped[str] = mapped_column(String(16), nullable=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

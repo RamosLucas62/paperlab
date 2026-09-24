@@ -1,6 +1,6 @@
 # Limitações e pendências conhecidas
 
-Esta entrega contém uma DEMO funcional e componentes isolados de integração; não é um executor conectado nem um sistema para decisão financeira.
+Esta entrega contém uma DEMO funcional e um terminal observacional conectado a fontes externas somente leitura; não é um executor nem um sistema para decisão financeira.
 
 ## Ainda não implementado no fluxo da aplicação
 
@@ -11,6 +11,7 @@ Esta entrega contém uma DEMO funcional e componentes isolados de integração; 
 5. REPLAY usando apenas respostas/snapshots gravados e livro próprio com hipóteses de execução explícitas.
 6. Métricas comparativas PAPER, custo real atribuível a IA/infraestrutura, performance no intervalo comum e estado de degradação no dashboard.
 7. Testes autenticados opt-in para as integrações externas e testes de integração PostgreSQL multi-worker. Nenhum deles foi executado.
+8. Simulador de ordens/paper no mercado Monad/Kuru, cálculo de P&L, taxas/slippage, posição virtual ou recomendação BUY/SELL. A tela do terminal não simula execução.
 
 ## Riscos de interpretação
 
@@ -20,3 +21,5 @@ Esta entrega contém uma DEMO funcional e componentes isolados de integração; 
 - Um teto de perda simulado não garante a perda máxima; gaps, execução, falhas externas e comportamento da plataforma podem divergir.
 - A estratégia SMA 20/50 e os thresholds da política são presets didáticos, não calibrados nem recomendações.
 - O teste E2E cobre apenas o caminho DEMO local e determinístico.
+- O feed real só funciona depois de informar um endereço de mercado Kuru correto. O tamanho de negócios não é mostrado quando sua unidade depende de uma precisão ainda não configurada.
+- Classificações Jev dependem de serviço externo faturável, podem falhar ou não reportar custo. Elas descrevem os campos enviados e não validam uma estratégia.

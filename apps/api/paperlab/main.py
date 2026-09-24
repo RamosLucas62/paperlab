@@ -24,7 +24,8 @@ from paperlab.config import get_settings
 from paperlab.database import Base, SessionLocal, engine, get_db
 from paperlab.demo import create_demo_experiment, ensure_default_experiment, run_demo_cycle, set_demo_status
 from paperlab.domain import ZERO
-from paperlab.models import AdminUser, Bar, Decision, Experiment, Fill, IntegrationEvent, ModelCall, NewsVersion, OrderIntent, PortfolioSnapshot, Snapshot
+from paperlab.market_feed import market_address_is_valid
+from paperlab.models import AdminUser, Bar, Decision, Experiment, Fill, IntegrationEvent, JevObservation, MarketEvent, MarketSample, ModelCall, NewsVersion, OrderIntent, PortfolioSnapshot, Snapshot, TerminalControl
 from paperlab.openrouter import ModelIntegrationError, OpenRouterClient
 
 
@@ -57,6 +58,10 @@ class ExperimentBody(BaseModel):
     mode: Literal["DEMO"] = "DEMO"
 
 
+class TerminalControlBody(BaseModel):
+    action: Literal["start_monitor", "stop_monitor", "enable_jev", "disable_jev"]
+
+
 def require_user(request: Request):
     if not request.session.get("username"):
         raise HTTPException(status_code=401, detail="Autenticação necessária.")
@@ -75,7 +80,11 @@ def integration_event(db: Session, name: str, status: str, message: str, details
 
 
 def _dt_iso(value: Optional[datetime]) -> Optional[str]:
-    return value.isoformat() if value else None
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat()
 
 
 def _latest_portfolio(db: Session, experiment_id: str, arm: str):
@@ -168,6 +177,16 @@ def _latest_integration_states(db: Session) -> dict:
     return result
 
 
+def _terminal_control(db: Session) -> TerminalControl:
+    control = db.get(TerminalControl, 1)
+    if control is None:
+        control = TerminalControl(id=1, monitor_enabled=False, jev_enabled=False, status="stopped")
+        db.add(control)
+        db.commit()
+        db.refresh(control)
+    return control
+
+
 @app.on_event("startup")
 def startup():
     if engine.url.get_backend_name() == "sqlite":
@@ -179,6 +198,7 @@ def startup():
             db.add(AdminUser(username=settings.admin_username, password_hash=password_hasher.hash(settings.admin_password)))
             db.commit()
         ensure_default_experiment(db)
+        _terminal_control(db)
     finally:
         db.close()
 
@@ -186,6 +206,88 @@ def startup():
 @app.get("/api/health")
 def health():
     return {"status": "ok", "application_mode": "DEMO", "external_calls_on_startup": False}
+
+
+@app.get("/api/terminal")
+def market_terminal(db: Session = Depends(get_db), _user: str = Depends(require_user)):
+    control = _terminal_control(db)
+    samples = db.scalars(select(MarketSample).order_by(MarketSample.observed_at.desc()).limit(300)).all()
+    events = db.scalars(select(MarketEvent).order_by(MarketEvent.occurred_at.desc(), MarketEvent.id.desc()).limit(60)).all()
+    observations = db.scalars(select(JevObservation).order_by(JevObservation.observed_at.desc(), JevObservation.id.desc()).limit(30)).all()
+    latest = samples[0] if samples else None
+    return {
+        "configuration": {
+            "market_configured": market_address_is_valid(settings.kuru_market_address),
+            "market_address_hint": (settings.kuru_market_address[:6] + "…" + settings.kuru_market_address[-4:]) if market_address_is_valid(settings.kuru_market_address) else None,
+            "symbol": settings.kuru_symbol,
+            "chain_id": settings.monad_chain_id,
+            "rpc_configured": bool(settings.monad_rpc_url.startswith("https://")),
+            "jev_configured": bool(settings.openrouter_api_key and settings.jev_model and "latest" not in settings.jev_model.lower()),
+            "jev_model": settings.jev_model,
+            "ai_call_budget_usd": str(settings.ai_call_budget_usd),
+            "ai_daily_budget_usd": str(settings.ai_daily_budget_usd),
+            "jev_interval_seconds": max(30, settings.terminal_jev_interval_seconds),
+        },
+        "control": {
+            "monitor_enabled": control.monitor_enabled,
+            "jev_enabled": control.jev_enabled,
+            "status": control.status,
+            "last_error": control.last_error,
+            "last_block_number": control.last_block_number,
+            "last_sample_at": _dt_iso(control.last_sample_at),
+            "last_jev_at": _dt_iso(control.last_jev_at),
+        },
+        "market": None if latest is None else {
+            "symbol": latest.symbol, "best_bid": str(latest.best_bid), "best_ask": str(latest.best_ask),
+            "mid_price": str(latest.mid_price), "spread_bps": str(latest.spread_bps),
+            "block_number": latest.block_number, "observed_at": _dt_iso(latest.observed_at),
+        },
+        "samples": [{"at": _dt_iso(row.observed_at), "mid_price": str(row.mid_price), "best_bid": str(row.best_bid),
+                      "best_ask": str(row.best_ask), "spread_bps": str(row.spread_bps)} for row in reversed(samples)],
+        "events": [{"at": _dt_iso(row.occurred_at), "side": row.side, "price": str(row.price),
+                     "size": None if row.size is None else str(row.size), "tx_hash": row.tx_hash} for row in events],
+        "jev_observations": [{"at": _dt_iso(row.observed_at), "status": row.status, "model": row.model,
+                              "result": row.result_json, "message": row.message, "cost_usd": None if row.cost_usd is None else str(row.cost_usd),
+                              "cost_status": row.cost_status, "latency_ms": row.latency_ms} for row in observations],
+        "safety": {"orders_enabled": False, "transaction_signing": False, "mode": "read_only_shadow"},
+    }
+
+
+@app.post("/api/terminal/control")
+def market_terminal_control(body: TerminalControlBody, request: Request,
+                            x_csrf_token: Optional[str] = Header(default=None), db: Session = Depends(get_db),
+                            _user: str = Depends(require_user)):
+    require_csrf(request, x_csrf_token)
+    control = _terminal_control(db)
+    if body.action == "start_monitor":
+        if not market_address_is_valid(settings.kuru_market_address):
+            raise HTTPException(status_code=409, detail="Configure KURU_MARKET_ADDRESS com o endereço MON/USDC da Kuru no EasyPanel antes de iniciar.")
+        if not settings.monad_rpc_url.startswith("https://"):
+            raise HTTPException(status_code=409, detail="Configure um endpoint HTTPS da Monad em MONAD_RPC_URL.")
+        if not settings.kuru_ws_url.startswith("wss://"):
+            raise HTTPException(status_code=409, detail="Configure um endpoint WSS seguro em KURU_WS_URL.")
+        control.monitor_enabled = True
+        control.status = "starting"
+        control.last_error = None
+    elif body.action == "stop_monitor":
+        control.monitor_enabled = False
+        control.jev_enabled = False
+        control.status = "stopped"
+        control.last_error = None
+    elif body.action == "enable_jev":
+        if not control.monitor_enabled:
+            raise HTTPException(status_code=409, detail="Inicie primeiro o monitor de mercado.")
+        if not settings.openrouter_api_key:
+            raise HTTPException(status_code=409, detail="Configure OPENROUTER_API_KEY no EasyPanel antes de habilitar o Jev.")
+        if not settings.jev_model or "latest" in settings.jev_model.lower():
+            raise HTTPException(status_code=409, detail="Configure em JEV_MODEL um identificador de versão fixa.")
+        control.jev_enabled = True
+        control.last_error = None
+    else:
+        control.jev_enabled = False
+    control.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"monitor_enabled": control.monitor_enabled, "jev_enabled": control.jev_enabled, "status": control.status}
 
 
 @app.get("/api/session")

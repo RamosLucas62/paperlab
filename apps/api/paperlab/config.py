@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_llm_model: str = ""
     jev_model: str = "typesafe/jev-1.13"
+    monad_rpc_url: str = "https://rpc.monad.xyz"
+    monad_chain_id: int = 143
+    kuru_ws_url: str = "wss://ws.kuru.io/"
+    kuru_market_address: str = ""
+    kuru_symbol: str = "MON/USDC"
+    terminal_sample_interval_seconds: int = 5
+    terminal_jev_interval_seconds: int = 120
 
     @field_validator("app_mode")
     @classmethod

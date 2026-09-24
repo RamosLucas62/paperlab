@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 
 OPENROUTER_ORIGIN = "https://openrouter.ai"
-SYSTEM_ONE_PATH = "/api/v1/systemone"
+JEV_DECISIONS_PATH = "/api/alpha/decisions"
 CHAT_COMPLETIONS_PATH = "/api/v1/chat/completions"
 
 
@@ -139,9 +139,9 @@ class OpenRouterClient:
     async def jev_classify(self, model: str, state: dict, questions: dict) -> ModelResult:
         if not model or "latest" in model:
             raise ModelIntegrationError("Configure uma versão fixa de Jev; o alias latest não é permitido no experimento.")
-        body = {"model": model, "state": json.dumps(state, ensure_ascii=False), "questions": questions}
+        body = {"model": model, "state": state, "questions": questions}
         started = time.monotonic()
-        response = await self._request(SYSTEM_ONE_PATH, body=body)
+        response = await self._request(JEV_DECISIONS_PATH, body=body)
         latency = int((time.monotonic() - started) * 1000)
         try:
             answers = response["answers"]

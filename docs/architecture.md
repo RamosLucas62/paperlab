@@ -5,18 +5,20 @@
 - `apps/web`: Next.js e TypeScript. Interface privada em português; todas as chamadas passam pela rota `/api` do servidor Next. O navegador não recebe tokens de sessão das integrações.
 - `apps/api`: FastAPI/Pydantic, regras de aplicação, SQLAlchemy e clientes HTTPX. Sessões administrativas são assinadas, `HttpOnly`, `SameSite=Strict`; ações mutáveis exigem token CSRF. Senhas são armazenadas com Argon2.
 - `apps/api/paperlab/worker.py`: processo separado que consulta estado persistido e avança somente experimentos DEMO. Na inicialização ele não coleta dados nem chama modelos ou corretora.
+- `apps/api/paperlab/bot_worker.py`: processo separado e controlado pelo banco para o Terminal JEV. Só abre a conexão WebSocket Kuru depois de um operador iniciar o monitor; lê altura de bloco via JSON-RPC Monad. Jev roda somente após ativação explícita, com reserva de orçamento e intervalo mínimo. O serviço não carrega chave de carteira nem código para assinar/enviar transação.
+- `apps/api/paperlab/market_feed.py`: normaliza snapshots do livro e negócios reportados pela Kuru sem inferir preço/tamanho ausentes. `MarketSample`, `MarketEvent` e `JevObservation` guardam amostras, eventos e classificações do terminal separadamente das tabelas de ordens DEMO/PAPER.
 - `apps/api/migrations`: migração Alembic inicial. SQLite é usado para desenvolvimento offline; PostgreSQL é o destino recomendado para coordenação persistente e pode ser local ou uma instância Supabase dedicada.
 - `packages/policy/filter-v1.json`: parâmetros versionados de classificação. `fixtures/demo_news.json`: notícias inventadas para exercício da interface, sempre sintéticas.
 
 ## Persistência e rastreabilidade
 
-Experimentos guardam modo, configuração congelada e hash. Snapshots guardam payload, cutoff, origem, versão e hash. Barras, versões de notícias, decisões, chamadas de modelo, intenções, fills, retratos de carteira, eventos das integrações e reservas de orçamento relacionam-se por identificadores e restrições de unicidade. Valores financeiros usam `NUMERIC` e `Decimal`; timestamps persistidos usam UTC. A interface formata horários em `America/Sao_Paulo` e mostra o fuso.
+Experimentos guardam modo, configuração congelada e hash. Snapshots guardam payload, cutoff, origem, versão e hash. Barras, versões de notícias, decisões, chamadas de modelo, intenções, fills, retratos de carteira, eventos das integrações e reservas de orçamento relacionam-se por identificadores e restrições de unicidade. O terminal tem armazenamento próprio para amostras Kuru, eventos negociados e classificações Jev. Valores de mercado usam `NUMERIC` e `Decimal`; timestamps persistidos usam UTC. A interface formata horários em `America/Sao_Paulo` e mostra o fuso.
 
 Na DEMO, o gerador usa seed fixa e valores artificiais. A estratégia cria o candidato SMA 20/50 a partir de barras fechadas; cada braço aplica sua decisão de filtro e seu próprio saldo sintético. Saídas seguem o mesmo ramo determinístico e não dependem da classificação textual. Fees DEMO são uma hipótese ilustrativa versionada, não uma tarifa da Alpaca.
 
 ## Limites de execução atuais
 
-O modo da API/configuração é fixado em DEMO; a interface não cria experimentos PAPER ou REPLAY. Os clientes Alpaca paper e OpenRouter/JEV são implementados separadamente e podem ser exercitados por diagnósticos acionados manualmente. O worker não executa esses clientes. Reservas de orçamento e tabelas de ordens/fills já têm modelos, mas ainda não formam um ciclo operacional conectado com idempotência/reconciliação completa. Não há caminho de negociação real.
+O modo de experimento continua fixado em DEMO; a interface não cria experimentos PAPER ou REPLAY. A tela Terminal é uma coleta observacional separada: Kuru/Monad são somente leitura e Jev não emite ordens. As integrações Alpaca permanecem sem ligação ao worker. Reservas de orçamento protegem chamadas Jev iniciadas explicitamente no terminal. Não há caminho de negociação Monad/Kuru nem cálculo de P&L.
 
 ## Fronteiras de segurança
 

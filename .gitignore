@@ -7,6 +7,7 @@ __pycache__/
 *.db
 .next/
 node_modules/
+*.tsbuildinfo
 apps/web/AGENTS.md
 apps/web/CLAUDE.md
 playwright-report/

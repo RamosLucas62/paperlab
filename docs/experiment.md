@@ -16,7 +16,7 @@ Cada DEMO persiste configuração/hash, semente, política, versão de custo, fo
 
 O painel DEMO exibe caixa, quantidade/valor de posição, patrimônio, retorno desde caixa inicial, drawdown em USD, exposição, contagem de intenções, operações encerradas, taxa de acerto quando há encerramentos, ganhos/perdas médios, custo sintético, vetos, abstenções, falhas, latência registrada e curvas de patrimônio. Mostra amostra insuficiente sem operações encerradas, mais referência de caixa parado e comprar/manter. Esses benchmarks herdam o caráter inteiramente sintético.
 
-Não anualize amostras pequenas e não interprete confidence de classificação como chance de lucro. Custos API/infraestrutura da integração ainda não aparecem como consumo real no painel, pois as chamadas não foram conectadas à execução de experimentos.
+Não anualize amostras pequenas e não interprete confidence de classificação como chance de lucro. Classificações do terminal têm custo separado e aparecem no próprio painel; elas não são integradas aos resultados A/B/C da DEMO.
 
 ## PAPER e REPLAY
 

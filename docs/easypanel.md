@@ -15,6 +15,7 @@ Os serviços são:
 - `postgres`: imagem fixada na série PostgreSQL 16, volume nomeado persistente, senha fornecida por variável do EasyPanel e health check.
 - `api`: imagem do backend, aguarda Postgres, executa `alembic upgrade head` contra o banco privado do próprio serviço e inicia FastAPI. Cookie seguro habilitado para HTTPS.
 - `worker`: processo Python separado em DEMO, com o mesmo banco privado. Não realiza requisições externas automaticamente.
+- `bot`: worker de leitura Kuru/Monad para o Terminal JEV. Fica ocioso até o operador ativar o monitor no painel; Jev é uma segunda ativação e exige OpenRouter configurado.
 - `web`: Next.js atrás do proxy, com URL interna `http://api:8000` incorporada no build para as rewrites de produção.
 
 O proxy `web` exige porta 3000. Habilite o certificado TLS e, após testar, redirecionamento de HTTP para HTTPS no EasyPanel. O DNS precisa apontar ao VPS; mantenha 80/443 liberadas no firewall. A [instalação oficial do EasyPanel](https://easypanel.io/docs) recomenda VPS Ubuntu nova, ao menos 2 GB de RAM e portas 80/443 disponíveis.
@@ -30,23 +31,33 @@ Cadastre no editor de ambiente do Compose:
 | `ADMIN_USERNAME` | Usuário administrativo escolhido pelo proprietário. |
 | `ADMIN_PASSWORD` | Senha exclusiva com ao menos 12 caracteres. |
 | `WORKER_INTERVAL_SECONDS` | Opcional; padrão 60. |
+| `MONAD_RPC_URL` | Opcional; padrão `https://rpc.monad.xyz`. Consulta somente chain ID e altura de bloco. |
+| `MONAD_CHAIN_ID` | Opcional; padrão `143` (Monad mainnet). Deve corresponder ao RPC escolhido. |
+| `KURU_WS_URL` | Opcional; padrão `wss://ws.kuru.io/`. |
+| `KURU_MARKET_ADDRESS` | Endereço do contrato de mercado Kuru MON/USDC. Sem ele, o botão de monitor fica desabilitado. |
+| `KURU_SYMBOL` | Opcional; padrão `MON/USDC`, rótulo mostrado no painel. |
+| `TERMINAL_SAMPLE_INTERVAL_SECONDS` | Opcional; intervalo mínimo de gravação das amostras do gráfico; padrão 5 segundos. |
+| `OPENROUTER_API_KEY` | Opcional; necessário apenas para ativar Jev. A chave não deve ser enviada no chat ou navegador. |
+| `JEV_MODEL` | Opcional; padrão `typesafe/jev-1.13`. Use uma versão fixa. |
+| `AI_CALL_BUDGET_USD` / `AI_DAILY_BUDGET_USD` | Limites reservados antes das chamadas Jev; padrões US$ 0,10 e US$ 2,00. |
+| `TERMINAL_JEV_INTERVAL_SECONDS` | Opcional; intervalo mínimo entre classificações; padrão 120 segundos. |
 
 Não cadastre credenciais Alpaca ou OpenRouter para servir a DEMO. Não inclua segredos no GitHub, build args, logs ou frontend. Alterações de variável exigem redeploy. Como a URL do banco incorpora `POSTGRES_PASSWORD`, use hex sem pontuação para evitar necessidade de percent-encoding.
 
 ## Procedimento de deploy
 
-1. Use o repositório público [RamosLucas62/paperlab](https://github.com/RamosLucas62/paperlab), cuja branch `main` contém o projeto. O commit `ca25b5b` também corrigiu o lock de dependências para Python 3.12.
+1. Use o repositório público [RamosLucas62/paperlab](https://github.com/RamosLucas62/paperlab), branch `main`.
 2. Ao atualizar o projeto, inspecione os arquivos staged e confirme que `.env`, bancos SQLite, `.venv`, `node_modules` e builds locais não foram incluídos.
 3. No EasyPanel: New Service → Compose → GitHub; informe `owner/paperlab`, branch `main`, Build Path `/`, arquivo `docker-compose.easypanel.yml`.
 4. Configure as quatro variáveis obrigatórias acima. Use senhas diferentes para admin, Postgres e assinatura de sessão.
-5. Faça Deploy e verifique a saúde de `postgres`, `api`, `worker` e `web`. A primeira inicialização cria/atualiza o schema do banco privado da VPS antes de subir a API.
+5. Faça Deploy e verifique a saúde de `postgres`, `api`, `worker`, `bot` e `web`. A primeira inicialização cria/atualiza o schema do banco privado da VPS antes de subir a API.
 6. Associe um hostname ao serviço `web` na porta interna `3000`, em HTTPS. Não publique a porta 8000 ou 5432.
-7. Confirme o login e o banner sintético DEMO, exporte um ciclo e verifique os logs. O produto ainda não executa PAPER ou REPLAY.
+7. Confirme o login e o Terminal JEV. Para usar o feed, configure o endereço correto do mercado Kuru e reinicie os serviços `api` e `bot`; depois ative o monitor no painel. Ative Jev separadamente somente depois de cadastrar a chave e revisar os limites de custo. Nenhuma ordem ou transação é enviada.
 8. Configure backup externo testável do volume Postgres. Um volume Docker sozinho não é backup.
 
-## Estado do deploy
+## Atualizar a instalação existente
 
-O workflow do GitHub para o commit `ca25b5b` concluiu com sucesso nos jobs de Python e web: [ver execução](https://github.com/RamosLucas62/paperlab/actions/runs/36002792228). O deploy na VPS ainda não foi executado: não foi informado um domínio apontado para a VPS nem foi conectado um serviço EasyPanel nesta sessão. Para concluir, crie o serviço Compose seguindo o procedimento acima, cadastre os segredos diretamente no EasyPanel e associe o domínio da VPS ao serviço `web`. Não envie senhas ou chaves pelo chat.
+Para a VPS PaperLab já configurada no EasyPanel, mantenha o serviço Compose atual ligado ao repositório e à branch `main`; sincronize e faça Deploy após o push. A migração `0002_market_terminal` é aplicada pela inicialização da API, preservando o volume Postgres. O serviço `bot` sobe parado, sem conexão externa, até o botão **Iniciar monitor** ser acionado. Cadastre `KURU_MARKET_ADDRESS` no Environment do Compose antes de iniciar o feed. A chave OpenRouter é opcional e só deve ser inserida se o Jev for ativado. Não é preciso recriar o domínio.
 
 ## GitHub público e licença
 

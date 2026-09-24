@@ -4,9 +4,10 @@ Laboratório privado para comparar três versões de uma regra didática: A usa 
 
 ## Estado desta entrega
 
-- A DEMO offline funciona no painel: login, criação de experimento, ciclos, diferenças A/B/C rastreáveis, pausa, encerramento e exportação JSON/CSV.
-- Os adaptadores Alpaca paper, OpenRouter e JEV têm validações e testes offline com transporte simulado. As telas de diagnóstico só chamam as integrações quando alguém aciona o botão.
-- **Integração externa não executada:** nenhuma credencial autenticada foi usada nesta entrega. O preflight Alpaca e validações de configuração/modelo são diagnósticos; o worker e a interface ainda executam apenas DEMO. Não inicie PAPER como se houvesse comparação conectada.
+- A DEMO sintética continua disponível no painel: login, experimentos, ciclos, diferenças A/B/C rastreáveis e exportação JSON/CSV.
+- O **Terminal JEV** acrescenta feed do livro/negociações Kuru e altura da Monad em modo somente leitura, mais classificações Jev opcionais em modo sombra. O monitor só inicia após ação no painel; Jev permanece desligado até ativação explícita.
+- **Sem execução de ordens:** esta etapa não conecta carteira, não assina nem envia transações e não calcula P&L. BUY/SELL na fita identifica o lado agressor informado pela Kuru, não ordens do PaperLab. A DEMO antiga não usa dados da Kuru.
+- **Integração externa ainda precisa ser configurada na VPS:** não foi fornecido endereço de mercado Kuru nem chave OpenRouter. As chamadas Jev podem ter custo e respeitam os limites de orçamento configurados.
 - REPLAY, pipeline PAPER ponta a ponta, reconciliação contínua de eventos/fills e avaliação por dados prospectivos permanecem fora do fluxo funcional atual. Ver [limitações](docs/limitations.md).
 
 ## Requisitos
@@ -62,14 +63,14 @@ O Compose de produção para o painel está em `docker-compose.easypanel.yml`. E
 
 1. Use o repositório público [RamosLucas62/paperlab](https://github.com/RamosLucas62/paperlab), já sincronizado com a branch `main`. Não adicione `.env`, banco local, chaves, certificados, `.venv` ou `node_modules`. O `.gitignore` e `.dockerignore` filtram esses arquivos.
 2. No EasyPanel, crie um serviço **Compose** com fonte **GitHub** (`owner/paperlab`), branch `main`, build path `/` e arquivo `docker-compose.easypanel.yml`. Repositórios públicos não precisam de token GitHub segundo o [guia de fontes do EasyPanel](https://easypanel.io/docs/services/app).
-3. Em Environment, configure `POSTGRES_PASSWORD` como segredo aleatório de 32 bytes hexadecimais, `SESSION_SECRET_KEY` como segredo aleatório com pelo menos 32 caracteres, `ADMIN_USERNAME` e uma `ADMIN_PASSWORD` exclusiva com pelo menos 12 caracteres. Senhas hexadecimais evitam caracteres que precisariam de escape na URL PostgreSQL. Não defina credenciais Alpaca/OpenRouter neste primeiro deploy DEMO.
+3. Em Environment, configure `POSTGRES_PASSWORD` como segredo aleatório de 32 bytes hexadecimais, `SESSION_SECRET_KEY` como segredo aleatório com pelo menos 32 caracteres, `ADMIN_USERNAME` e uma `ADMIN_PASSWORD` exclusiva com pelo menos 12 caracteres. Senhas hexadecimais evitam caracteres que precisariam de escape na URL PostgreSQL.
 4. Faça Deploy. A API espera o Postgres saudável e aplica Alembic ao banco local da VPS antes de iniciar. O volume `paperlab-postgres` mantém os dados entre recriações; configure e teste backups no provedor/VPS antes de atualizações relevantes.
 5. Em Domains, direcione o domínio ao serviço `web`, porta `3000`, habilite certificado HTTPS e redirecionamento HTTP→HTTPS. Aponte o registro DNS `A` do domínio para o IP da VPS e libere 80/443 no firewall. Não crie domínio ou porta pública para `api` ou `postgres`.
-6. Depois de verificar o domínio e o certificado, entre com as credenciais administrativas configuradas. O dashboard continua em DEMO. As portas não são publicadas pelo Compose para o host.
+6. Depois de verificar o domínio e o certificado, entre com as credenciais administrativas configuradas. O Terminal JEV aparece como tela principal; configure o mercado antes de iniciar o monitor. As portas não são publicadas pelo Compose para o host.
 
 O Compose local `docker-compose.yml` continua usando ligações em `127.0.0.1`; use o arquivo EasyPanel acima na VPS. O guia completo e as verificações de produção estão em [docs/easypanel.md](docs/easypanel.md). O EasyPanel oferece domínio/HTTPS e deploy de Compose a partir de GitHub na própria interface; consulte a [documentação de Compose](https://easypanel.io/docs/services/compose) e [domínios](https://easypanel.io/docs/services/compose#domains) para os campos atuais.
 
-**Estado da publicação:** código publicado em `main` no [GitHub](https://github.com/RamosLucas62/paperlab). O commit `ca25b5b` corrigiu o lock de dependências para Python 3.12; o workflow [CI](https://github.com/RamosLucas62/paperlab/actions/runs/36002792228) concluiu com sucesso para Python e web. O deploy na VPS ainda não foi executado: falta conectar o projeto a um serviço EasyPanel e associar um domínio apontado para a VPS. Veja [docs/easypanel.md](docs/easypanel.md). Nenhum segredo deve ser enviado pelo chat ou commitado no repositório.
+**Atualização da VPS:** o projeto já está rodando no EasyPanel. Depois de publicar este commit no GitHub, sincronize e reimplante o Compose existente para aplicar a migração e iniciar o serviço `bot` em espera. O feed de mercado só começa depois de configurar `KURU_MARKET_ADDRESS` e clicar em **Iniciar monitor**. Veja [docs/easypanel.md](docs/easypanel.md). Nenhum segredo deve ser enviado pelo chat ou commitado no repositório.
 
 ## Testes e checagens locais
 
@@ -104,7 +105,7 @@ Isso não deve ser apontado a um banco Supabase ou outro banco externo durante d
 
 Veja [.env.example](.env.example) e [integrações](docs/integrations.md). Para diagnósticos autenticados, cadastre credenciais paper separadas em A, B e C, credencial Alpaca para dados e chave OpenRouter no ambiente privado da aplicação. Não envie segredos no chat, frontend, fixtures ou commits. Os botões de diagnóstico não enviam ordens.
 
-Ainda não existe comando ou fluxo que inicie uma execução PAPER ponta a ponta. O caminho implementado de envio de ordens fica restrito em código ao host paper oficial, mas deve ser tratado como adaptador isolado até completar integração, orçamento, snapshots, reconciliação e opt-in dedicado.
+O Terminal JEV não é um fluxo PAPER nem conecta uma corretora. Ele mantém feed e classificações observacionais isolados da DEMO e não contém fluxo de envio de ordens Monad/Kuru.
 
 ## Documentação
 

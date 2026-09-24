@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import MarketTerminal from "./terminal";
 
 type Arm = {
   arm: string; equity_usd: string; cash_usd: string; position_qty: string; position_mark_usd: string;
@@ -114,7 +115,7 @@ export default function Home() {
   const [integrations, setIntegrations] = useState<IntegrationData | null>(null);
   const [allExperiments, setAllExperiments] = useState<{ id: string; name: string; mode: string; status: string; entries_paused: boolean; config_hash: string; created_at: string }[]>([]);
   const [history, setHistory] = useState<DecisionDetail[]>([]);
-  const [section, setSection] = useState("visao");
+  const [section, setSection] = useState("terminal");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -239,6 +240,7 @@ export default function Home() {
       <div className="side-brand"><div className="brand-mark">P</div><div><strong>PaperLab</strong><small>SIMULATION STUDIO</small></div></div>
       <div className="workspace-label">ESPAÇO DE TRABALHO</div>
       <nav className="main-nav" aria-label="Navegação principal">
+        <button className={section === "terminal" ? "nav-item active" : "nav-item"} onClick={() => setSection("terminal")}><span className="nav-symbol">⌁</span>Terminal JEV<span className="nav-count terminal-nav-count">MON</span></button>
         <button className={section === "visao" ? "nav-item active" : "nav-item"} onClick={() => setSection("visao")}><span className="nav-symbol">◫</span>Visão geral</button>
         <button className={section === "experimentos" ? "nav-item active" : "nav-item"} onClick={() => setSection("experimentos")}><span className="nav-symbol">◷</span>Experimentos<span className="nav-count">{allExperiments.length || 1}</span></button>
         <button className={section === "historico" ? "nav-item active" : "nav-item"} onClick={() => setSection("historico")}><span className="nav-symbol">≋</span>Decisões e ordens</button>
@@ -252,15 +254,17 @@ export default function Home() {
 
     <main className="main-area">
       <header className="topbar">
-        <div><div className="breadcrumbs">PAPERLAB <span>/</span> {section === "visao" ? "VISÃO GERAL" : section === "experimentos" ? "EXPERIMENTOS" : section === "historico" ? "DECISÕES E ORDENS" : "INTEGRAÇÕES"}</div><h1>{section === "visao" ? "Painel comparativo" : section === "experimentos" ? "Experimentos" : section === "historico" ? "Rastreabilidade" : "Conexões"}</h1></div>
+        <div><div className="breadcrumbs">PAPERLAB <span>/</span> {section === "terminal" ? "TERMINAL JEV" : section === "visao" ? "VISÃO GERAL" : section === "experimentos" ? "EXPERIMENTOS" : section === "historico" ? "DECISÕES E ORDENS" : "INTEGRAÇÕES"}</div><h1>{section === "terminal" ? "Terminal de mercado" : section === "visao" ? "Painel comparativo" : section === "experimentos" ? "Experimentos" : section === "historico" ? "Rastreabilidade" : "Conexões"}</h1></div>
         <div className="topbar-right"><span className="timezone-chip"><span className="timezone-dot" />Horário · São Paulo</span><div className="user-avatar">{username.slice(0, 1).toUpperCase()}</div></div>
       </header>
 
       <div className="content-area">
-        <div className="mode-banner"><div className="demo-icon">✳</div><div><strong>{activeDashboard?.banner ?? "DEMONSTRAÇÃO — dados e decisões sintéticos"}</strong><span>Nenhuma chamada externa é feita automaticamente. Valores e decisões não representam dados de mercado.</span></div><span className="demo-badge">MODO DEMO</span></div>
+        {section !== "terminal" && <div className="mode-banner"><div className="demo-icon">✳</div><div><strong>{activeDashboard?.banner ?? "DEMONSTRAÇÃO — dados e decisões sintéticos"}</strong><span>Nenhuma chamada externa é feita automaticamente. Valores e decisões não representam dados de mercado.</span></div><span className="demo-badge">MODO DEMO</span></div>}
         {message && <div className="notice" role="status"><span>{message}</span><button aria-label="Fechar aviso" onClick={() => setMessage("")}>×</button></div>}
 
-        {!activeDashboard && <div className="loading-state"><div className="loader" />Carregando dados do laboratório…</div>}
+        {!activeDashboard && section !== "terminal" && <div className="loading-state"><div className="loader" />Carregando dados do laboratório…</div>}
+
+        {section === "terminal" && <MarketTerminal csrf={csrf} onMessage={setMessage} />}
 
         {activeDashboard && section === "visao" && <>
           <div className="page-intro"><div><div className="eyebrow">EXPERIMENTO ATUAL <span className="hash-pill">{activeDashboard.experiment.config_hash.slice(0, 10)}</span></div><h2>{activeDashboard.experiment.name}</h2><p>Mesmo snapshot e regra-base; filtros aplicados depois em cada carteira isolada.</p></div>
@@ -311,7 +315,7 @@ export default function Home() {
           <div className="integration-footnote">Uma verificação bem-sucedida confirma acesso ao endpoint consultado. Só uma chamada autenticada confirma a integração real; chamadas de validação de modelo não provam a qualidade de respostas.</div>
         </section>}
 
-        <footer className="page-footer"><span>PaperLab · ambiente de avaliação</span><span>Dados sintéticos identificados · nada aqui é recomendação</span><span>Timezone · America/Sao_Paulo</span></footer>
+        <footer className="page-footer"><span>PaperLab · ambiente de avaliação</span><span>{section === "terminal" ? "Kuru/Monad somente leitura · Jev em modo sombra" : "Dados sintéticos identificados · nada aqui é recomendação"}</span><span>Timezone · America/Sao_Paulo</span></footer>
       </div>
     </main>
   </div>;

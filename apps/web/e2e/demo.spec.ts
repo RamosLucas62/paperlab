@@ -9,6 +9,8 @@ test("admin can start, pause and export a reproducible DEMO cycle", async ({ pag
   await page.getByLabel("Senha").fill(password!);
   await page.getByRole("button", { name: "Entrar" }).click();
 
+  await expect(page.getByRole("heading", { name: "Terminal JEV" })).toBeVisible();
+  await page.getByRole("button", { name: "Visão geral" }).click();
   await expect(page.getByText("DEMONSTRAÇÃO — dados e decisões sintéticos")).toBeVisible();
   await page.getByRole("button", { name: "Experimentos", exact: false }).click();
   await page.getByLabel("Nome do experimento").fill(`Playwright ${Date.now()}`);
