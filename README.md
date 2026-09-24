@@ -70,7 +70,7 @@ O Compose de produção para o painel está em `docker-compose.easypanel.yml`. E
 
 O Compose local `docker-compose.yml` continua usando ligações em `127.0.0.1`; use o arquivo EasyPanel acima na VPS. O guia completo e as verificações de produção estão em [docs/easypanel.md](docs/easypanel.md). O EasyPanel oferece domínio/HTTPS e deploy de Compose a partir de GitHub na própria interface; consulte a [documentação de Compose](https://easypanel.io/docs/services/compose) e [domínios](https://easypanel.io/docs/services/compose#domains) para os campos atuais.
 
-**Atualização da VPS:** o projeto já está rodando no EasyPanel. Depois de publicar este commit no GitHub, sincronize e reimplante o Compose existente para aplicar a migração e iniciar o serviço `bot` em espera. O feed de mercado só começa depois de configurar `KURU_MARKET_ADDRESS` e clicar em **Iniciar monitor**. Veja [docs/easypanel.md](docs/easypanel.md). Nenhum segredo deve ser enviado pelo chat ou commitado no repositório.
+**Atualização da VPS:** a implementação está publicada na branch `main`. No EasyPanel já configurado, sincronize e reimplante o Compose existente para aplicar a migração e iniciar o serviço `bot` em espera. O feed de mercado só começa depois de configurar `KURU_MARKET_ADDRESS` e clicar em **Iniciar monitor**. Veja [docs/easypanel.md](docs/easypanel.md). Nenhum segredo deve ser enviado pelo chat ou commitado no repositório.
 
 ## Testes e checagens locais
 
