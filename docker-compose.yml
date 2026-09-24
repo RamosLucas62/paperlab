@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_DB: paperlab
+      POSTGRES_USER: paperlab
+      POSTGRES_PASSWORD: local-paperlab-only
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - paperlab-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperlab -d paperlab"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://paperlab:local-paperlab-only@postgres:5432/paperlab
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://paperlab:local-paperlab-only@postgres:5432/paperlab
+      APP_MODE: demo
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?configure SESSION_SECRET_KEY in .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?configure ADMIN_USERNAME in .env}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?configure ADMIN_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:8000:8000"
+    command: ["uvicorn", "paperlab.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://paperlab:local-paperlab-only@postgres:5432/paperlab
+      APP_MODE: demo
+      WORKER_INTERVAL_SECONDS: 60
+    command: ["python", "-m", "paperlab.worker"]
+    depends_on:
+      - api
+      - postgres
+
+  web:
+    build:
+      context: apps/web
+      dockerfile: Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:8000
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  paperlab-postgres:

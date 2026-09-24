@@ -1,0 +1,32 @@
+[
+  {
+    "id": "demo-article-risk-01",
+    "source": "PaperLab DEMO fixture",
+    "title": "SAMPLE: exchange pauses withdrawals after a fictional security review",
+    "summary": "Synthetic training text used only to demonstrate evidence links and a conservative risk veto.",
+    "created_at": "2024-01-03T00:20:00Z",
+    "updated_at": "2024-01-03T00:20:00Z",
+    "symbols": ["BTC/USD"],
+    "synthetic": true
+  },
+  {
+    "id": "demo-article-context-02",
+    "source": "PaperLab DEMO fixture",
+    "title": "SAMPLE: fictional payment network adds a bitcoin settlement pilot",
+    "summary": "Synthetic neutral context; this fixture makes no claim about a real company or event.",
+    "created_at": "2024-01-04T00:15:00Z",
+    "updated_at": "2024-01-04T00:15:00Z",
+    "symbols": ["BTC/USD"],
+    "synthetic": true
+  },
+  {
+    "id": "demo-article-ambiguous-03",
+    "source": "PaperLab DEMO fixture",
+    "title": "SAMPLE: conflicting fictional reports about a protocol update",
+    "summary": "Synthetic text with deliberately incomplete details, for demonstrating ABSTAIN.",
+    "created_at": "2024-01-05T00:10:00Z",
+    "updated_at": "2024-01-05T00:10:00Z",
+    "symbols": ["BTC/USD"],
+    "synthetic": true
+  }
+]

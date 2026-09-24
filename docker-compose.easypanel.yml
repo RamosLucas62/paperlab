@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: paperlab
+      POSTGRES_USER: paperlab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Easypanel}
+    volumes:
+      - paperlab-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paperlab -d paperlab"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_MODE: demo
+      DATABASE_URL: postgresql+psycopg://paperlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Easypanel}@postgres:5432/paperlab
+      SESSION_SECRET_KEY: ${SESSION_SECRET_KEY:?set SESSION_SECRET_KEY in Easypanel}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:?set ADMIN_USERNAME in Easypanel}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in Easypanel}
+      COOKIE_SECURE: "true"
+      WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-60}
+    command: ["sh", "-c", "alembic -c apps/api/alembic.ini upgrade head && uvicorn paperlab.main:app --host 0.0.0.0 --port 8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_MODE: demo
+      DATABASE_URL: postgresql+psycopg://paperlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Easypanel}@postgres:5432/paperlab
+      WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-60}
+    command: ["python", "-m", "paperlab.worker"]
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: apps/web
+      dockerfile: Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:8000
+    restart: unless-stopped
+    environment:
+      API_INTERNAL_URL: http://api:8000
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  paperlab-postgres:

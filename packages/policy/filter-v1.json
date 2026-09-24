@@ -1,0 +1,10 @@
+{
+  "version": "filter-v1",
+  "description": "Conservative experimental thresholds; not calibrated or investment advice.",
+  "no_context_policy": "follow_base_strategy",
+  "relevance_allow_min_confidence": 0.75,
+  "risk_block_min_confidence": 0.65,
+  "ambiguity_abstain_min_confidence": 0.65,
+  "risk_choice": "risk_event",
+  "ambiguity_choice": "insufficient_or_ambiguous"
+}
