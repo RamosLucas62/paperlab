@@ -31,10 +31,10 @@ Cadastre no editor de ambiente do Compose:
 | `ADMIN_USERNAME` | Usuário administrativo escolhido pelo proprietário. |
 | `ADMIN_PASSWORD` | Senha exclusiva com ao menos 12 caracteres. |
 | `WORKER_INTERVAL_SECONDS` | Opcional; padrão 60. |
-| `MONAD_RPC_URL` | Opcional; padrão `https://rpc.monad.xyz`. Consulta somente chain ID e altura de bloco. |
-| `MONAD_CHAIN_ID` | Opcional; padrão `143` (Monad mainnet). Deve corresponder ao RPC escolhido. |
-| `KURU_WS_URL` | Opcional; padrão `wss://ws.kuru.io/`. |
-| `KURU_MARKET_ADDRESS` | Endereço do contrato de mercado Kuru MON/USDC. Sem ele, o botão de monitor fica desabilitado. |
+| `MONAD_RPC_URL` | Opcional; padrão `https://rpc.testnet.monad.xyz`. Consulta somente chain ID e altura de bloco. |
+| `MONAD_CHAIN_ID` | Deve ser `10143` (Monad Testnet); a aplicação recusa outro chain ID. |
+| `KURU_WS_URL` | Opcional; padrão `wss://ws.testnet.kuru.io`, endpoint listado no SDK oficial legado da Kuru para testnet. |
+| `KURU_MARKET_ADDRESS` | Endereço de um mercado MON/USDC da Kuru implantado na Monad Testnet. Sem ele, o botão de monitor fica desabilitado. Não use endereço da mainnet. |
 | `KURU_SYMBOL` | Opcional; padrão `MON/USDC`, rótulo mostrado no painel. |
 | `TERMINAL_SAMPLE_INTERVAL_SECONDS` | Opcional; intervalo mínimo de gravação das amostras do gráfico; padrão 5 segundos. |
 | `OPENROUTER_API_KEY` | Opcional; necessário apenas para ativar Jev. A chave não deve ser enviada no chat ou navegador. |
@@ -52,7 +52,7 @@ Não cadastre credenciais Alpaca ou OpenRouter para servir a DEMO. Não inclua s
 4. Configure as quatro variáveis obrigatórias acima. Use senhas diferentes para admin, Postgres e assinatura de sessão.
 5. Faça Deploy e verifique a saúde de `postgres`, `api`, `worker`, `bot` e `web`. A primeira inicialização cria/atualiza o schema do banco privado da VPS antes de subir a API.
 6. Associe um hostname ao serviço `web` na porta interna `3000`, em HTTPS. Não publique a porta 8000 ou 5432.
-7. Confirme o login e o Terminal JEV. Para usar o feed, configure o endereço correto do mercado Kuru e reinicie os serviços `api` e `bot`; depois ative o monitor no painel. Ative Jev separadamente somente depois de cadastrar a chave e revisar os limites de custo. Nenhuma ordem ou transação é enviada.
+7. Confirme o login e o Terminal JEV. Para usar o feed, configure o endereço de um mercado Kuru **da Monad Testnet (chain ID 10143)** e reinicie os serviços `api` e `bot`; depois ative o monitor no painel. Ative Jev separadamente somente depois de cadastrar a chave e revisar os limites de custo. Nenhuma ordem ou transação é enviada.
 8. Configure backup externo testável do volume Postgres. Um volume Docker sozinho não é backup.
 
 ## Atualizar a instalação existente

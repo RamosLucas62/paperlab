@@ -33,9 +33,10 @@ class Settings(BaseSettings):
     openrouter_api_key: str = ""
     openrouter_llm_model: str = ""
     jev_model: str = "typesafe/jev-1.13"
-    monad_rpc_url: str = "https://rpc.monad.xyz"
-    monad_chain_id: int = 143
-    kuru_ws_url: str = "wss://ws.kuru.io/"
+    # The JevTrader terminal is deliberately pinned to Monad testnet.
+    monad_rpc_url: str = "https://rpc.testnet.monad.xyz"
+    monad_chain_id: int = 10143
+    kuru_ws_url: str = "wss://ws.testnet.kuru.io"
     kuru_market_address: str = ""
     kuru_symbol: str = "MON/USDC"
     terminal_sample_interval_seconds: int = 5
@@ -48,6 +49,13 @@ class Settings(BaseSettings):
         if normalized != "demo":
             raise ValueError("APP_MODE only accepts 'demo'; PAPER is an explicit experiment, and real mode is unsupported.")
         return normalized
+
+    @field_validator("monad_chain_id")
+    @classmethod
+    def require_monad_testnet(cls, value: int) -> int:
+        if value != 10143:
+            raise ValueError("O Terminal JEV está limitado à Monad Testnet (chain ID 10143).")
+        return value
 
 
 @lru_cache

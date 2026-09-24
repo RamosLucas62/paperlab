@@ -27,9 +27,9 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in Easypanel}
       COOKIE_SECURE: "true"
       WORKER_INTERVAL_SECONDS: ${WORKER_INTERVAL_SECONDS:-60}
-      MONAD_RPC_URL: ${MONAD_RPC_URL:-https://rpc.monad.xyz}
-      MONAD_CHAIN_ID: ${MONAD_CHAIN_ID:-143}
-      KURU_WS_URL: ${KURU_WS_URL:-wss://ws.kuru.io/}
+      MONAD_RPC_URL: ${MONAD_RPC_URL:-https://rpc.testnet.monad.xyz}
+      MONAD_CHAIN_ID: ${MONAD_CHAIN_ID:-10143}
+      KURU_WS_URL: ${KURU_WS_URL:-wss://ws.testnet.kuru.io}
       KURU_MARKET_ADDRESS: ${KURU_MARKET_ADDRESS:-}
       KURU_SYMBOL: ${KURU_SYMBOL:-MON/USDC}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -71,9 +71,9 @@ services:
     environment:
       APP_MODE: demo
       DATABASE_URL: postgresql+psycopg://paperlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in Easypanel}@postgres:5432/paperlab
-      MONAD_RPC_URL: ${MONAD_RPC_URL:-https://rpc.monad.xyz}
-      MONAD_CHAIN_ID: ${MONAD_CHAIN_ID:-143}
-      KURU_WS_URL: ${KURU_WS_URL:-wss://ws.kuru.io/}
+      MONAD_RPC_URL: ${MONAD_RPC_URL:-https://rpc.testnet.monad.xyz}
+      MONAD_CHAIN_ID: ${MONAD_CHAIN_ID:-10143}
+      KURU_WS_URL: ${KURU_WS_URL:-wss://ws.testnet.kuru.io}
       KURU_MARKET_ADDRESS: ${KURU_MARKET_ADDRESS:-}
       KURU_SYMBOL: ${KURU_SYMBOL:-MON/USDC}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

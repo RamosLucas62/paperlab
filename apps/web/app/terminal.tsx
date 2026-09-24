@@ -104,7 +104,7 @@ export default function MarketTerminal({ csrf, onMessage }: { csrf: string; onMe
     {error && <div className="terminal-error" role="alert">{error}</div>}
 
     <div className="terminal-heading">
-      <div><div className="terminal-kicker">PAPERLAB <span>·</span> MONAD MAINNET <span>·</span> {data?.configuration.symbol ?? "MON/USDC"}</div><h2>Terminal JEV</h2><p>Acompanhe o livro de ofertas e as classificações de mercado em um ambiente de sombra.</p></div>
+      <div><div className="terminal-kicker">PAPERLAB <span>·</span> MONAD TESTNET <span>·</span> {data?.configuration.symbol ?? "MON/USDC"}</div><h2>Terminal JEV</h2><p>Acompanhe o livro de ofertas e as classificações de mercado em um ambiente de sombra.</p></div>
       <div className="terminal-actions">
         {data?.control.monitor_enabled ? <button className="terminal-button secondary" onClick={() => control("stop_monitor")} disabled={busy}>■ Parar monitor</button> : <button className="terminal-button primary" onClick={() => control("start_monitor")} disabled={busy || !data?.configuration.market_configured}>▶ Iniciar monitor</button>}
         {data?.control.jev_enabled ? <button className="terminal-button secondary" onClick={() => control("disable_jev")} disabled={busy}>Desativar Jev</button> : <button className="terminal-button outline" onClick={() => control("enable_jev")} disabled={busy || !data?.configuration.jev_configured || !data?.control.monitor_enabled}>Ativar Jev</button>}
@@ -113,13 +113,13 @@ export default function MarketTerminal({ csrf, onMessage }: { csrf: string; onMe
 
     <div className="terminal-status-line"><span className={`terminal-status status-${data?.control.status ?? "stopped"}`}><i />{statusLabel(data?.control.status ?? "stopped")}</span><span className="terminal-status-separator" /><span>Último bloco <strong>{data?.control.last_block_number?.toLocaleString("en-US") ?? "—"}</strong></span><span className="terminal-status-separator" /><span>Atualizado <strong>{time(data?.control.last_sample_at)}</strong></span><span className="terminal-status-spacer" /><span className="terminal-market-hint">Mercado {data?.configuration.market_address_hint ?? "não configurado"}</span></div>
 
-    {!data?.configuration.market_configured && <div className="terminal-setup-note"><strong>Falta informar o mercado da Kuru.</strong><span>No EasyPanel, adicione <code>KURU_MARKET_ADDRESS</code> com o endereço do mercado MON/USDC. Depois salve e reimplante o serviço <code>api</code> e o serviço <code>bot</code>.</span></div>}
+    {!data?.configuration.market_configured && <div className="terminal-setup-note"><strong>Falta informar o mercado de teste da Kuru.</strong><span>No EasyPanel, adicione <code>KURU_MARKET_ADDRESS</code> com o endereço de um mercado Kuru na Monad Testnet (chain ID 10143). Não use endereço da rede principal. Depois salve e reimplante os serviços <code>api</code> e <code>bot</code>.</span></div>}
     {data?.control.last_error && <div className="terminal-error" role="status">{data.control.last_error}</div>}
 
     <div className="terminal-stats-grid">
       <article className="terminal-stat-card"><span>PREÇO MÉDIO · {current?.symbol ?? data?.configuration.symbol ?? "MON/USDC"}</span><strong>{price(current?.mid_price)}</strong><small>bid {price(current?.best_bid)} <b>·</b> ask {price(current?.best_ask)}</small></article>
       <article className="terminal-stat-card"><span>SPREAD DO LIVRO</span><strong>{current ? `${Number(current.spread_bps).toFixed(2)} bps` : "—"}</strong><small>calculado a partir do melhor bid e ask</small></article>
-      <article className="terminal-stat-card"><span>REDE · BLOCO</span><strong>{data?.configuration.chain_id === 143 ? "Monad" : `Chain ${data?.configuration.chain_id}`}</strong><small>{data?.control.last_block_number?.toLocaleString("en-US") ?? "aguardando RPC"}</small></article>
+      <article className="terminal-stat-card"><span>REDE · BLOCO</span><strong>{data?.configuration.chain_id === 10143 ? "Monad Testnet" : `Chain ${data?.configuration.chain_id}`}</strong><small>{data?.control.last_block_number?.toLocaleString("en-US") ?? "aguardando RPC"}</small></article>
       <article className="terminal-stat-card"><span>CLASSIFICAÇÃO JEV</span><strong>{data?.control.jev_enabled ? "Ativa" : "Desativada"}</strong><small>{lastJev ? `última ${time(lastJev.at)} · ${lastJev.status}` : "sem chamada até agora"}</small></article>
     </div>
 

@@ -56,9 +56,9 @@ Referências oficiais conferidas:
 
 ## Monad e Kuru
 
-- O terminal usa `eth_chainId` e `eth_blockNumber` por JSON-RPC e exige a rede indicada em `MONAD_CHAIN_ID` (143 por padrão, mainnet).
-- O serviço separado `bot` assina `frontendOrderbook` no WebSocket Kuru (`KURU_WS_URL`) para o contrato configurado em `KURU_MARKET_ADDRESS`. Configure o endereço MON/USDC da rede escolhida; a aplicação não escolhe nem inventa um contrato.
+- O terminal usa `eth_chainId` e `eth_blockNumber` por JSON-RPC e exige Monad Testnet (chain ID `10143`). A configuração recusa outros IDs e a verificação do RPC acontece ao iniciar o monitor.
+- O serviço separado `bot` assina `frontendOrderbook` no WebSocket Kuru (`KURU_WS_URL`) para o contrato configurado em `KURU_MARKET_ADDRESS`. Configure um endereço MON/USDC da Monad Testnet; a aplicação não escolhe nem inventa um contrato.
 - O botão **Iniciar monitor** abre a conexão. Ao parar, o processo fecha o feed e desativa Jev. O serviço fica ocioso depois de iniciar o container. O terminal mantém no máximo 30 dias de amostras/eventos/observações.
 - BUY/SELL no histórico representa apenas o lado agressor de eventos `Trade` publicados pelo feed. Preços de negócio podem aparecer sem tamanho normalizado, porque a escala de tamanho da Kuru depende do mercado; a aplicação não infere essa escala.
 
-Referências oficiais: [Monad Developer Hub](https://monad.xyz/developers), [Monad JSON-RPC](https://docs.monad.xyz/reference/json-rpc/api), [Kuru Labs Python SDK](https://github.com/Kuru-Labs/kuru-sdk-py).
+Referências oficiais: [Monad Developer Portal](https://developers.monad.xyz/) (testnet chain ID e RPC), [Monad JSON-RPC](https://docs.monad.xyz/reference/json-rpc/api), [Kuru Labs Python SDK](https://github.com/Kuru-Labs/kuru-sdk-py). O endpoint Kuru de testnet está listado no [SDK Python legado oficial](https://github.com/Kuru-Labs/kuru-sdk-py-old); sua disponibilidade atual não foi testada nesta sessão. O endereço de mercado segue configurável e precisa ser obtido/validado antes de iniciar o feed.
