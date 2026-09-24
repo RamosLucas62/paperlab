@@ -66,6 +66,10 @@ def create_demo_experiment(db: Session, name: str) -> Experiment:
         payload_json={"synthetic": True, "seed": 271828, "history_bars": 57},
     )
     db.add(seed_snapshot)
+    # PostgreSQL enforces the snapshot foreign key on every bar insert. Flush
+    # the parent snapshot before queuing the bars that reference it; SQLite's
+    # test configuration can otherwise hide this unit-of-work ordering issue.
+    db.flush()
     bars = [demo_bar(index) for index in range(57)]
     for item in bars:
         db.add(_bar_row(seed_snapshot.id, item))
