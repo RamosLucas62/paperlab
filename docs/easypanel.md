@@ -61,7 +61,7 @@ Para a VPS PaperLab já configurada no EasyPanel, mantenha o serviço Compose at
 
 ### Observação de mercado atual
 
-A configuração padrão continua na Monad Testnet, mas o monitor fica bloqueado: o RPC responde com chain ID `10143`, enquanto a Kuru não documenta um feed WSS ativo de Testnet no SDK atual. O host `ws.testnet.kuru.io` e o endereço de exemplo vêm do SDK legado; o host não resolveu e o endereço não tem bytecode após o reset da Testnet. Não preencha esse host antigo. Para observar o mercado público MON/USDC da mainnet sem enviar transações, selecione explicitamente a rede e use estas variáveis no Environment do Compose:
+A configuração padrão continua na Monad Testnet, mas o monitor fica bloqueado: o RPC responde com chain ID `10143`, enquanto a Kuru não documenta um feed WSS ativo de Testnet no SDK atual. O host `ws.testnet.kuru.io` não resolve e cinco endereços de mercado de referências antigas (incluindo o exemplo do SDK legado e quatro do [Kuru Terminal da organização Monad Developers](https://github.com/monad-developers/kuru-terminal)) retornam `eth_getCode = 0x` no RPC atual. Não preencha esses hosts ou endereços antigos. Para observar o mercado público MON/USDC da mainnet sem enviar transações, selecione explicitamente a rede e use estas variáveis no Environment do Compose:
 
 ```env
 MONAD_CHAIN_ID=143
