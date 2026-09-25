@@ -2,6 +2,14 @@
 
 Esta entrega mostra um piloto de cinco dias com feed externo somente leitura e simulador local. A DEMO antiga permanece no banco, mas não aparece na navegação principal. O simulador não é um executor nem um sistema para decisão financeira.
 
+## Novo piloto baseado no livro da Kuru
+
+- O teste novo preserva o livro virtual anterior em tabelas separadas. Compara duas contas virtuais de 1.000 USDC: uma regra determinística baseada no topo do livro e no movimento de 30 segundos, e a mesma oportunidade filtrada pelo Jev. O Jev pode escolher BUY, SELL ou HOLD. A comparação mede o valor incremental do filtro de IA, não uma estratégia de mercado independente.
+- O feed é amostrado aproximadamente a cada segundo e avaliado a cada cinco segundos quando recebe mensagens. O Jev só é consultado se a regra encontra uma oportunidade ou se sua carteira já tem posição. Orçamento, latência, feed ausente e dados fracos podem reduzir muito o número de chamadas. Esta cadência não é negociação a cada bloco nem HFT.
+- As duas contas podem usar até o saldo virtual disponível em uma posição comprada de MON; não há venda descoberta, alavancagem ou carteira real. Ordens limites virtuais expiram em 15 segundos e são consideradas integralmente preenchidas quando uma cotação oposta posterior toca o preço. Não há medição de posição na fila, profundidade disponível para 1.000 USDC, liquidez do livro inteiro, execução parcial ou impacto de mercado.
+- O resultado deduz hipóteses fixas por preenchimento: 10 bps de taxa, 5 bps adicionais de incerteza e 0,02 USDC de gas. Estes números não foram confirmados como as tarifas ou slippage reais da Kuru. Preenchimentos podem ser otimistas apesar desse desconto. Custos do modelo reportados pela OpenRouter são descontados da conta Jev; chamadas sem custo reportado ficam identificadas e podem fazer o resultado parecer melhor.
+- O prazo começa com uma cotação recente e continua durante pausas. O fechamento depende de nova cotação para marcar uma posição ainda aberta. Cinco dias permitem observar comportamento e perdas, mas não inferir a chance de transformar 1.000 em 10.000 USDC ao longo de 90 dias.
+
 ## Ainda não implementado no fluxo da aplicação
 
 1. Criação/execução de experimentos PAPER A/B/C, vinculação persistente das três contas após preflight e aplicação da mesma configuração em contas isoladas.

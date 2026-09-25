@@ -27,6 +27,7 @@ from paperlab.domain import ZERO
 from paperlab.market_feed import market_address_is_valid
 from paperlab.models import AdminUser, Bar, Decision, Experiment, Fill, IntegrationEvent, ModelCall, NewsVersion, OrderIntent, PortfolioSnapshot, Snapshot, TerminalControl, MarketSample, TerminalSimulationAccount
 from paperlab.openrouter import ModelIntegrationError, OpenRouterClient
+from paperlab.pilot_v2 import latest_run as latest_v2_run, pause_run as pause_v2_run, payload as pilot_v2_payload, start_run as start_v2_run
 from paperlab.simulation import cancel_open_orders, ensure_simulation_account, pilot_end, simulation_payload
 from paperlab.terminal_state import ensure_terminal_control, load_terminal_history
 
@@ -62,6 +63,10 @@ class ExperimentBody(BaseModel):
 
 class TerminalControlBody(BaseModel):
     action: Literal["start_pilot", "pause_pilot", "start_monitor", "stop_monitor", "enable_jev", "disable_jev", "enable_simulation", "disable_simulation"]
+
+
+class PilotV2ControlBody(BaseModel):
+    action: Literal["start", "pause", "resume"]
 
 
 def require_user(request: Request):
@@ -252,6 +257,72 @@ def market_terminal(db: Session = Depends(get_db), _user: str = Depends(require_
     }
 
 
+@app.get("/api/pilot-v2")
+def pilot_v2(db: Session = Depends(get_db), _user: str = Depends(require_user)):
+    control = _terminal_control(db)
+    sample = db.scalar(select(MarketSample).where(
+        MarketSample.chain_id == settings.monad_chain_id,
+        MarketSample.symbol == settings.kuru_symbol,
+    ).order_by(MarketSample.observed_at.desc(), MarketSample.id.desc()).limit(1))
+    return {
+        **pilot_v2_payload(db, settings.monad_chain_id, settings.kuru_symbol, sample),
+        "feed": {
+            "status": control.status,
+            "error": control.last_error,
+            "sample_at": _dt_iso(sample.observed_at) if sample else None,
+            "mid_price": str(sample.mid_price) if sample else None,
+            "ready": market_address_is_valid(settings.kuru_market_address)
+                     and settings.kuru_ws_url.startswith("wss://")
+                     and settings.monad_rpc_url.startswith("https://"),
+            "model_ready": bool(settings.openrouter_api_key and settings.jev_model and "latest" not in settings.jev_model.lower()),
+        },
+    }
+
+
+@app.post("/api/pilot-v2/control")
+def pilot_v2_control(body: PilotV2ControlBody, request: Request,
+                     x_csrf_token: Optional[str] = Header(default=None), db: Session = Depends(get_db),
+                     _user: str = Depends(require_user)):
+    require_csrf(request, x_csrf_token)
+    control = _terminal_control(db)
+    if body.action in {"start", "resume"}:
+        if not market_address_is_valid(settings.kuru_market_address) or not settings.kuru_ws_url.startswith("wss://") or not settings.monad_rpc_url.startswith("https://"):
+            raise HTTPException(status_code=409, detail="Configure o mercado, o feed Kuru e o acesso à Monad antes de iniciar.")
+        if not settings.openrouter_api_key or not settings.jev_model or "latest" in settings.jev_model.lower():
+            raise HTTPException(status_code=409, detail="Configure a chave OpenRouter e uma versão fixa do Jev antes de iniciar.")
+        existing_run = latest_v2_run(db, settings.monad_chain_id, settings.kuru_symbol)
+        if existing_run is not None and existing_run.status == "finished":
+            raise HTTPException(status_code=409, detail="O teste de cinco dias terminou; seu histórico foi preservado.")
+        sample = db.scalar(select(MarketSample).where(
+            MarketSample.chain_id == settings.monad_chain_id,
+            MarketSample.symbol == settings.kuru_symbol,
+        ).order_by(MarketSample.observed_at.desc(), MarketSample.id.desc()).limit(1))
+        expired = existing_run is not None and datetime.now(timezone.utc) >= (existing_run.ends_at if existing_run.ends_at.tzinfo else existing_run.ends_at.replace(tzinfo=timezone.utc))
+        if not expired and (sample is None or (datetime.now(timezone.utc) - (sample.observed_at if sample.observed_at.tzinfo else sample.observed_at.replace(tzinfo=timezone.utc))).total_seconds() > 30):
+            control.monitor_enabled = True
+            control.status = "starting"
+            db.commit()
+            raise HTTPException(status_code=409, detail="Monitor ligado. Aguarde uma cotação recente da Kuru e tente iniciar novamente.")
+        try:
+            start_v2_run(db, settings.monad_chain_id, settings.kuru_symbol)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        control.jev_enabled = False
+        control.simulation_enabled = False
+        cancel_open_orders(db, settings.monad_chain_id)
+        control.monitor_enabled = True
+        control.status = "starting"
+        control.last_error = None
+    else:
+        pause_v2_run(db, settings.monad_chain_id, settings.kuru_symbol)
+        if not control.simulation_enabled:
+            control.monitor_enabled = False
+            control.status = "stopped"
+    control.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"status": latest_v2_run(db, settings.monad_chain_id, settings.kuru_symbol).status if latest_v2_run(db, settings.monad_chain_id, settings.kuru_symbol) else "not_started"}
+
+
 @app.post("/api/terminal/control")
 def market_terminal_control(body: TerminalControlBody, request: Request,
                             x_csrf_token: Optional[str] = Header(default=None), db: Session = Depends(get_db),
@@ -259,6 +330,9 @@ def market_terminal_control(body: TerminalControlBody, request: Request,
     require_csrf(request, x_csrf_token)
     control = _terminal_control(db)
     if body.action in {"start_monitor", "start_pilot"}:
+        v2 = latest_v2_run(db, settings.monad_chain_id, settings.kuru_symbol)
+        if body.action == "start_pilot" and v2 is not None and v2.status == "running":
+            raise HTTPException(status_code=409, detail="Pause o novo piloto antes de retomar o teste anterior.")
         if not market_address_is_valid(settings.kuru_market_address):
             raise HTTPException(status_code=409, detail="Configure KURU_MARKET_ADDRESS com o endereço MON/USDC da Kuru no EasyPanel antes de iniciar.")
         if not settings.monad_rpc_url.startswith("https://"):
@@ -281,11 +355,12 @@ def market_terminal_control(body: TerminalControlBody, request: Request,
         control.status = "starting"
         control.last_error = None
     elif body.action in {"stop_monitor", "pause_pilot"}:
-        control.monitor_enabled = False
+        v2 = latest_v2_run(db, settings.monad_chain_id, settings.kuru_symbol)
+        control.monitor_enabled = v2 is not None and v2.status == "running"
         control.jev_enabled = False
         control.simulation_enabled = False
         cancel_open_orders(db, settings.monad_chain_id)
-        control.status = "stopped"
+        control.status = "connected" if control.monitor_enabled else "stopped"
         control.last_error = None
     elif body.action == "enable_jev":
         if not control.monitor_enabled:

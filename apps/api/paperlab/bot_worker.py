@@ -23,8 +23,9 @@ from paperlab.config import get_settings
 from paperlab.database import SessionLocal
 from paperlab.demo import ensure_default_experiment
 from paperlab.market_feed import OrderBookState, decode_orderbook_message, market_address_is_valid, terminal_jev_questions
-from paperlab.models import JevObservation, MarketEvent, MarketSample, TerminalControl, TerminalSimulationDecision, TerminalSimulationFill, TerminalSimulationOrder
+from paperlab.models import JevObservation, MarketEvent, MarketSample, PilotV2Evaluation, PilotV2Order, TerminalControl, TerminalSimulationDecision, TerminalSimulationFill, TerminalSimulationOrder
 from paperlab.openrouter import ModelIntegrationError, OpenRouterClient
+from paperlab.pilot_v2 import active_run as active_v2_run, advance_orders as advance_v2_orders, ai_questions as v2_questions, begin_evaluation as begin_v2_evaluation, close_if_due as close_v2_if_due, complete_ai_evaluation
 from paperlab.simulation import advance_simulation_with_sample, close_pilot_if_due, ensure_simulation_account, expire_open_orders, record_simulated_decision
 from paperlab.terminal_state import ensure_terminal_control
 
@@ -33,6 +34,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("paperlab.market_worker")
 settings = get_settings()
 _jev_tasks: set[asyncio.Task] = set()
+_v2_tasks: set[asyncio.Task] = set()
 
 
 def _now() -> datetime:
@@ -65,6 +67,8 @@ def _prune_terminal_history(db: Session | None = None, *, now: datetime | None =
             MarketSample.id.in_(select(TerminalSimulationOrder.created_sample_id)),
             MarketSample.id.in_(select(TerminalSimulationOrder.filled_sample_id)),
             MarketSample.id.in_(select(TerminalSimulationFill.market_sample_id)),
+            MarketSample.id.in_(select(PilotV2Evaluation.sample_id)),
+            MarketSample.id.in_(select(PilotV2Order.created_sample_id)),
         ))
         session.execute(delete(JevObservation).where(
             or_(JevObservation.sample_id.in_(old_samples), JevObservation.observed_at < cutoff),
@@ -113,11 +117,12 @@ async def assert_market_contract_exists() -> None:
         raise RuntimeError(f"KURU_MARKET_ADDRESS não tem contrato na {network} configurada.")
 
 
-def _persist_message(message: dict, block_number: int | None, book: OrderBookState, *, jev_inflight: bool = False) -> tuple[MarketSample | None, bool]:
+def _persist_message(message: dict, block_number: int | None, book: OrderBookState, *, jev_inflight: bool = False, v2_inflight: bool = False) -> tuple[MarketSample | None, bool, bool]:
     parsed = decode_orderbook_message(message)
     current_bid, current_ask = book.apply(parsed)
     sample = None
     jev_due = False
+    v2_due = False
     now = _now()
     with SessionLocal() as db:
         control = ensure_control(db)
@@ -130,12 +135,15 @@ def _persist_message(message: dict, block_number: int | None, book: OrderBookSta
                 db.add(MarketEvent(chain_id=settings.monad_chain_id, event_key=key, occurred_at=trade.occurred_at, side=trade.side,
                     price=trade.price, size=trade.size, tx_hash=trade.tx_hash))
         if current_bid and current_ask and current_bid <= current_ask:
+            v2 = active_v2_run(db, settings.monad_chain_id, settings.kuru_symbol)
             last_at = control.last_sample_at
-            if last_at is None or (now - (last_at if last_at.tzinfo else last_at.replace(tzinfo=timezone.utc))).total_seconds() >= max(1, settings.terminal_sample_interval_seconds):
+            sample_interval = 1 if v2 is not None else max(1, settings.terminal_sample_interval_seconds)
+            if last_at is None or (now - (last_at if last_at.tzinfo else last_at.replace(tzinfo=timezone.utc))).total_seconds() >= sample_interval:
                 mid = (current_bid + current_ask) / Decimal(2)
                 spread = (current_ask - current_bid) / mid * Decimal(10000) if mid else Decimal(0)
                 sample = MarketSample(chain_id=settings.monad_chain_id, observed_at=now, symbol=settings.kuru_symbol, best_bid=current_bid,
-                    best_ask=current_ask, mid_price=mid, spread_bps=spread, block_number=block_number)
+                    best_ask=current_ask, mid_price=mid, spread_bps=spread, block_number=block_number,
+                    best_bid_size_raw=book.bids.get(current_bid), best_ask_size_raw=book.asks.get(current_ask))
                 db.add(sample)
                 db.flush()
                 control.last_sample_at = now
@@ -147,6 +155,12 @@ def _persist_message(message: dict, block_number: int | None, book: OrderBookSta
                     # Reserve the cadence when dispatching so a slow provider call
                     # cannot create duplicate paid requests while the feed continues.
                     control.last_jev_at = now
+                if v2 is not None and not v2_inflight:
+                    last_v2 = v2.last_decision_at
+                    interval = v2.config_json["decision_interval_seconds"]
+                    if last_v2 is None or (now - (last_v2 if last_v2.tzinfo else last_v2.replace(tzinfo=timezone.utc))).total_seconds() >= interval:
+                        v2.last_decision_at = now
+                        v2_due = True
             if sample is not None:
                 if control.simulation_enabled:
                     ensure_simulation_account(db, settings.monad_chain_id, settings.kuru_symbol)
@@ -154,6 +168,10 @@ def _persist_message(message: dict, block_number: int | None, book: OrderBookSta
                     advance_simulation_with_sample(db, control, sample, now=now)
                 else:
                     jev_due = False
+                if close_v2_if_due(db, control, sample, now=now):
+                    v2_due = False
+                else:
+                    advance_v2_orders(db, sample, now=now)
             expire_open_orders(db, settings.monad_chain_id, now=now)
         if control.monitor_enabled:
             control.status = "connected"
@@ -162,7 +180,7 @@ def _persist_message(message: dict, block_number: int | None, book: OrderBookSta
         db.commit()
         if sample is not None:
             db.refresh(sample)
-        return sample, jev_due
+        return sample, jev_due, v2_due
 
 
 async def _classify_with_jev(sample: MarketSample):
@@ -286,6 +304,82 @@ def _track_jev_task(sample: MarketSample) -> None:
     task.add_done_callback(finished)
 
 
+async def _classify_v2(sample: MarketSample) -> None:
+    with SessionLocal() as db:
+        evaluation, state = begin_v2_evaluation(db, sample, settings.kuru_market_address)
+        db.commit()
+        if evaluation is None or state is None:
+            return
+        evaluation_id = evaluation.id
+
+    cap = Decimal(settings.ai_call_budget_usd)
+    if not settings.openrouter_api_key or cap <= 0:
+        with SessionLocal() as db:
+            complete_ai_evaluation(db, evaluation_id, choice=None, confidence=None, status="budget_blocked")
+            db.commit()
+        return
+    reservation_key = f"pilot-v2-{evaluation_id}-{uuid4().hex[:12]}"
+    cycle_id = f"pilot-v2-{evaluation_id}"
+    with SessionLocal() as db:
+        experiment = ensure_default_experiment(db)
+        try:
+            reserve_ai_budget(db, experiment_id=experiment.id, cycle_id=cycle_id, reservation_key=reservation_key,
+                proposed_usd=cap, per_call_cap_usd=cap, daily_cap_usd=Decimal(settings.ai_daily_budget_usd))
+            db.commit()
+        except BudgetExceeded:
+            db.rollback()
+            complete_ai_evaluation(db, evaluation_id, choice=None, confidence=None, status="budget_blocked")
+            db.commit()
+            return
+
+    choice = None
+    confidence = None
+    cost = None
+    latency = None
+    status = "failed"
+    try:
+        client = OpenRouterClient(settings.openrouter_api_key, timeout=4)
+        result = await client.jev_classify(settings.jev_model, state, v2_questions(sample.symbol))
+        answer = result.response["action"]
+        choice = answer["choice"]
+        confidence = Decimal(answer["confidence"]) if answer.get("confidence") is not None else None
+        cost = result.cost_usd
+        latency = result.latency_ms
+        status = "ready"
+    except asyncio.CancelledError:
+        with SessionLocal() as db:
+            reconcile_ai_budget(db, reservation_key, None)
+            complete_ai_evaluation(db, evaluation_id, choice=None, confidence=None, status="cancelled")
+            db.commit()
+        raise
+    except (ModelIntegrationError, ValueError) as exc:
+        logger.warning("Pilot V2 Jev classification unavailable: %s", exc)
+    except Exception:
+        logger.exception("Pilot V2 Jev classification failed")
+
+    with SessionLocal() as db:
+        try:
+            reconcile_ai_budget(db, reservation_key, cost)
+            complete_ai_evaluation(db, evaluation_id, choice=choice, confidence=confidence,
+                status=status, latency_ms=latency, model_cost=cost)
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("Could not persist Pilot V2 decision")
+
+
+def _track_v2_task(sample: MarketSample) -> None:
+    task = asyncio.create_task(_classify_v2(sample), name=f"paperlab-v2-{sample.id}")
+    _v2_tasks.add(task)
+
+    def finished(done: asyncio.Task) -> None:
+        _v2_tasks.discard(done)
+        if not done.cancelled() and done.exception() is not None:
+            logger.error("Pilot V2 cycle failed", exc_info=(type(done.exception()), done.exception(), done.exception().__traceback__))
+
+    task.add_done_callback(finished)
+
+
 def _expire_simulated_orders() -> None:
     with SessionLocal() as db:
         expire_open_orders(db, settings.monad_chain_id)
@@ -337,9 +431,12 @@ async def _run_feed_session():
                 except Exception:
                     logger.exception("Monad RPC temporarily unavailable")
             jev_inflight = any(not task.done() for task in _jev_tasks)
-            sample, jev_due = _persist_message(payload, block_number, book, jev_inflight=jev_inflight)
+            v2_inflight = any(not task.done() for task in _v2_tasks)
+            sample, jev_due, v2_due = _persist_message(payload, block_number, book, jev_inflight=jev_inflight, v2_inflight=v2_inflight)
             if jev_due and sample is not None:
                 _track_jev_task(sample)
+            if v2_due and sample is not None:
+                _track_v2_task(sample)
 
 
 async def run():

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from paperlab.models import (
     JevObservation,
     MarketSample,
+    PilotV2Run,
     TerminalControl,
     TerminalSimulationAccount,
     TerminalSimulationDecision,
@@ -97,9 +98,15 @@ def close_pilot_if_due(db: Session, control: TerminalControl, sample: MarketSamp
     account.updated_at = now
     cancel_open_orders(db, sample.chain_id, now=now)
     control.simulation_enabled = False
-    control.jev_enabled = False
-    control.monitor_enabled = False
-    control.status = "stopped"
+    v2_running = db.scalar(select(PilotV2Run.id).where(
+        PilotV2Run.chain_id == sample.chain_id,
+        PilotV2Run.symbol == sample.symbol,
+        PilotV2Run.status == "running",
+    ).limit(1)) is not None
+    if not v2_running:
+        control.jev_enabled = False
+        control.monitor_enabled = False
+        control.status = "stopped"
     db.flush()
     return True
 

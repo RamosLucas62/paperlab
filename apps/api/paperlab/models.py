@@ -247,6 +247,8 @@ class MarketSample(Base):
     mid_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
     spread_bps: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
     block_number: Mapped[Optional[int]] = mapped_column(Integer)
+    best_bid_size_raw: Mapped[Optional[Decimal]] = mapped_column(Numeric(50, 18))
+    best_ask_size_raw: Mapped[Optional[Decimal]] = mapped_column(Numeric(50, 18))
 
 
 class MarketEvent(Base):
@@ -346,3 +348,80 @@ class TerminalSimulationFill(Base):
     price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
     gross_value_usdc: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
     occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False, index=True)
+
+
+class PilotV2Run(Base):
+    __tablename__ = "pilot_v2_runs"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chain_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    symbol: Mapped[str] = mapped_column(String(24), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_decision_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    config_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    baseline_cash: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    baseline_qty: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    baseline_entry_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    baseline_costs: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    ai_cash: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    ai_qty: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    ai_entry_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    ai_costs: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    model_costs: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    model_unknown_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    final_baseline_equity: Mapped[Optional[Decimal]] = mapped_column(Numeric(24, 8))
+    final_ai_equity: Mapped[Optional[Decimal]] = mapped_column(Numeric(24, 8))
+
+
+class PilotV2Evaluation(Base):
+    __tablename__ = "pilot_v2_evaluations"
+    __table_args__ = (UniqueConstraint("run_id", "sample_id", name="uq_pilot_v2_run_sample"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("pilot_v2_runs.id"), nullable=False, index=True)
+    sample_id: Mapped[int] = mapped_column(ForeignKey("market_samples.id"), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    signal: Mapped[str] = mapped_column(String(8), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    return_30s: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10))
+    book_imbalance: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 10))
+    spread_bps: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    baseline_action: Mapped[str] = mapped_column(String(8), nullable=False)
+    ai_action: Mapped[str] = mapped_column(String(8), nullable=False)
+    ai_choice: Mapped[Optional[str]] = mapped_column(String(16))
+    ai_confidence: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 4))
+    ai_status: Mapped[str] = mapped_column(String(24), nullable=False)
+    model_latency_ms: Mapped[Optional[int]] = mapped_column(Integer)
+
+
+class PilotV2Order(Base):
+    __tablename__ = "pilot_v2_orders"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("pilot_v2_runs.id"), nullable=False, index=True)
+    evaluation_id: Mapped[int] = mapped_column(ForeignKey("pilot_v2_evaluations.id"), nullable=False)
+    arm: Mapped[str] = mapped_column(String(8), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    limit_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    created_sample_id: Mapped[int] = mapped_column(ForeignKey("market_samples.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    filled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class PilotV2Trade(Base):
+    __tablename__ = "pilot_v2_trades"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("pilot_v2_runs.id"), nullable=False, index=True)
+    evaluation_id: Mapped[int] = mapped_column(ForeignKey("pilot_v2_evaluations.id"), nullable=False)
+    order_id: Mapped[int] = mapped_column(ForeignKey("pilot_v2_orders.id"), nullable=False)
+    arm: Mapped[str] = mapped_column(String(8), nullable=False)
+    side: Mapped[str] = mapped_column(String(8), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    market_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    execution_price: Mapped[Decimal] = mapped_column(Numeric(30, 12), nullable=False)
+    gross_value_usdc: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    cost_usdc: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

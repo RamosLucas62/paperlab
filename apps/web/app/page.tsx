@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import MarketTerminal from "./terminal";
+import PilotV2 from "./pilot-v2";
 
 type Session = { authenticated: boolean; username?: string; csrf_token?: string };
 
@@ -61,7 +62,8 @@ export default function Home() {
     </header>
     <main className="pilot-content">
       {message && <div className="pilot-notice" role="status"><span>{message}</span><button onClick={() => setMessage("")} aria-label="Fechar aviso">×</button></div>}
-      <MarketTerminal csrf={session.csrf_token} onMessage={setMessage} />
+      <PilotV2 csrf={session.csrf_token} />
+      <details className="v2-legacy"><summary>Consultar teste anterior</summary><MarketTerminal csrf={session.csrf_token} onMessage={setMessage} /></details>
     </main>
   </div>;
 }

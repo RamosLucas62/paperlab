@@ -52,12 +52,12 @@ Não cadastre credenciais Alpaca ou OpenRouter para servir a DEMO. Não inclua s
 4. Configure as quatro variáveis obrigatórias acima. Use senhas diferentes para admin, Postgres e assinatura de sessão.
 5. Faça Deploy e verifique a saúde de `postgres`, `api`, `worker`, `bot` e `web`. A primeira inicialização cria/atualiza o schema do banco privado da VPS antes de subir a API.
 6. Associe um hostname ao serviço `web` na porta interna `3000`, em HTTPS. Não publique a porta 8000 ou 5432.
-7. Confirme o login e o piloto de cinco dias. Para usar o feed, configure `KURU_MARKET_ADDRESS` na rede selecionada e reinicie `api` e `bot`; depois clique em **Iniciar piloto de 5 dias**. A migração `0005_five_day_pilot` é aplicada pela API. O DRY RUN mantém ordens e posição fictícias no banco; nenhuma ordem ou transação é enviada à Kuru/Monad.
+7. Confirme o login e o novo piloto de cinco dias. Para usar o feed, configure `KURU_MARKET_ADDRESS` na rede selecionada e reinicie `api` e `bot`; depois clique em **Iniciar novo teste**. As migrações `0005_five_day_pilot` e `0006_pilot_v2` são aplicadas pela API. A versão anterior continua disponível em **Consultar teste anterior**, com registros separados. O novo teste mantém duas carteiras fictícias: regra sem IA e Jev. Nenhuma ordem ou transação é enviada à Kuru/Monad.
 8. Configure backup externo testável do volume Postgres. Um volume Docker sozinho não é backup.
 
 ## Atualizar a instalação existente
 
-Para a VPS PaperLab já configurada no EasyPanel, mantenha o serviço Compose atual ligado ao repositório e à branch `main`; sincronize e faça Deploy após o push. A migração `0005_five_day_pilot` preserva o volume Postgres e o histórico existente. Se o DRY RUN já foi iniciado, a data original de criação da carteira virtual conta como início do piloto. O serviço `bot` sobe parado até **Iniciar piloto de 5 dias** quando ainda não houver um piloto ativo. Cadastre `KURU_MARKET_ADDRESS`, feed WSS e chave OpenRouter no Environment do Compose. Não é preciso recriar o domínio. Ao mudar o chain ID, a aplicação pausa monitor, Jev e simulação, cancela ordens simuladas pendentes e separa o histórico por rede.
+Para a VPS PaperLab já configurada no EasyPanel, mantenha o serviço Compose atual ligado ao repositório e à branch `main`; sincronize e faça Deploy após o push. A migração `0006_pilot_v2` adiciona um livro virtual separado e preserva os registros da versão anterior no volume Postgres. O novo prazo de cinco dias começa ao clicar em **Iniciar novo teste** com uma cotação recente. O serviço `bot` usa o feed atual da Kuru e suspende o piloto anterior quando a nova versão começa. Cadastre `KURU_MARKET_ADDRESS`, feed WSS e chave OpenRouter no Environment do Compose. Não é preciso recriar o domínio. Ao mudar o chain ID, a aplicação pausa monitor, Jev e simulação, cancela ordens simuladas pendentes e separa o histórico por rede.
 
 ### Observação de mercado atual
 
